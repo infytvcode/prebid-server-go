@@ -300,5 +300,6 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderZeroClickFraud:    zeroclickfraud.Builder,
 		openrtb_ext.BidderInfTvHb:           infytvhb.Builder,
 		openrtb_ext.BidderInfyTV:            infytv.Builder,
+		openrtb_ext.BidderInfTvHb:           infytvhb.Builder,
 	}
 }

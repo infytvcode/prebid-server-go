@@ -388,6 +388,7 @@ func CoreBidderNames() []BidderName {
 		BidderZeroClickFraud,
 		BidderInfTvHb,
 		BidderInfyTV,
+		BidderInfTvHb,
 	}
 }
 
