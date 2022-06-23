@@ -1,0 +1,21 @@
+maintainer:
+  email: tech+hb@infy.tv
+gvlVendorID: 42
+modifyingVastXmlAllowed: true
+capabilities:
+  app:
+    mediaTypes:
+      - banner
+      - video
+      - audio
+      - native
+  site:
+    mediaTypes:
+      - banner
+      - video
+      - audio
+      - native
+userSync:
+  redirect:
+    url: https://foo.com/sync?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect={{.RedirectURL}}
+    userMacro: $UID

@@ -76,6 +76,7 @@ import (
 	"github.com/prebid/prebid-server/adapters/impactify"
 	"github.com/prebid/prebid-server/adapters/improvedigital"
 	"github.com/prebid/prebid-server/adapters/infytv"
+	"github.com/prebid/prebid-server/adapters/infytvhb"
 	"github.com/prebid/prebid-server/adapters/inmobi"
 	"github.com/prebid/prebid-server/adapters/interactiveoffers"
 	"github.com/prebid/prebid-server/adapters/invibes"
@@ -314,5 +315,6 @@ func newAdapterBuilders() map[openrtb_ext.BidderName]adapters.Builder {
 		openrtb_ext.BidderYieldmo:           yieldmo.Builder,
 		openrtb_ext.BidderYieldone:          yieldone.Builder,
 		openrtb_ext.BidderZeroClickFraud:    zeroclickfraud.Builder,
+		openrtb_ext.BidderInfTvHb:           infytvhb.Builder,
 	}
 }
