@@ -1064,8 +1064,7 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("adapters.yieldone.endpoint", "https://y.one.impact-ad.jp/hbs_imp")
 	v.SetDefault("adapters.yssp.disabled", true)
 	v.SetDefault("adapters.zeroclickfraud.endpoint", "http://{{.Host}}/openrtb2?sid={{.SourceId}}")
-	v.SetDefault("adapters.infytvhb.endpoint", "http://nxs.infy.tv/openrtb2/infytv")
-	v.SetDefault("adapters.infytvhb.disabled", "false")
+<<<<<<< HEAD
 	v.SetDefault("adapters.infytv.endpoint", "https://nxs.infy.tv/pbs/openrtb")
 	v.SetDefault("adapters.infytvhb.endpoint", "http://nxs.infy.tv/openrtb2/infytv")
 	v.SetDefault("adapters.infytvhb.disabled", "false")

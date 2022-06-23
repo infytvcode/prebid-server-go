@@ -11,6 +11,7 @@
     "customer_id": {
       "type": "string",
       "description": "customer_id"
+<<<<<<< HEAD
     },
     "tag_id": {
       "type": "string",
@@ -35,6 +36,8 @@
     "max_cpm": {
       "type": "number",
       "description": "customer_id"
+=======
+>>>>>>> 309d5d81 (Adding infytvhb)
     }
   },
   "required": [
