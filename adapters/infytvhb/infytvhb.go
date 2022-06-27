@@ -24,7 +24,7 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters
 	return bidder, nil
 }
 
-// MakeRequests makes the HTTP requests which should be made to fetch bids.
+// MakeRequests makes the HTTP requests which should be made to fetch bids. infytv
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
 	var requests []*adapters.RequestData
 	var errors []error
