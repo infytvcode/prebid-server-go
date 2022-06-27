@@ -44,6 +44,20 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		headers.Add("Accept", "application/json")
 		headers.Add("x-openrtb-version", "2.5")
 
+		if request.Device != nil {
+			if len(request.Device.UA) > 0 {
+				headers.Add("User-Agent", request.Device.UA)
+			}
+
+			if len(request.Device.IPv6) > 0 {
+				headers.Add("X-Forwarded-For", request.Device.IPv6)
+			}
+
+			if len(request.Device.IP) > 0 {
+				headers.Add("X-Forwarded-For", request.Device.IP)
+			}
+		}
+
 		if infyExt, err := getImpressionExt(&imp); err != nil {
 			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
 		} else {
