@@ -1,6 +1,6 @@
 package openrtb_ext
 
-type ImpExtInfyTvHb struct {
+type ExtInfytvhb struct {
 	DspID      string `json:"dsp_id"`
 	CustomerID string `json:"customer_id"`
 	TagID      string `json:"tag_id"`
