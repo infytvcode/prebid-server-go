@@ -11,6 +11,30 @@
     "customer_id": {
       "type": "string",
       "description": "customer_id"
+    },
+    "tag_id": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "base": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "path": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "dsp_type": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "min_cpm": {
+      "type": "number",
+      "description": "customer_id"
+    },
+    "max_cpm": {
+      "type": "number",
+      "description": "customer_id"
     }
   },
   "required": [
