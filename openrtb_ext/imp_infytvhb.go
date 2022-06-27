@@ -1,6 +1,7 @@
 package openrtb_ext
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 type ExtInfytvhb struct {
 	DspID      string  `json:"dsp_id"`
 	CustomerID string  `json:"customer_id"`
@@ -12,6 +13,9 @@ type ExtInfytvhb struct {
 	MaxCpm     float64 `json:"max_cpm"`
 =======
 type ImpExtInfyTvHb struct {
+=======
+type ExtInfytvhb struct {
+>>>>>>> fbf560fc (Update)
 	DspID      string `json:"dsp_id"`
 	CustomerID string `json:"customer_id"`
 	TagID      string `json:"tag_id"`
