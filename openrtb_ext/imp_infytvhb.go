@@ -11,6 +11,7 @@ type ExtInfytvhb struct {
 	DspType    string  `json:"dsp_type"`
 	MinCpm     float64 `json:"min_cpm"`
 	MaxCpm     float64 `json:"max_cpm"`
+<<<<<<< HEAD
 =======
 type ImpExtInfyTvHb struct {
 =======
@@ -25,4 +26,6 @@ type ExtInfytvhb struct {
 	MinCpm     string `json:"min_cpm"`
 	MaxCpm     string `json:"max_cpm"`
 >>>>>>> 309d5d81 (Adding infytvhb)
+=======
+>>>>>>> 93ab7868 (InfyHB fix crash)
 }

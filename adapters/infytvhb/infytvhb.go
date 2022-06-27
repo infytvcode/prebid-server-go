@@ -35,6 +35,7 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters
 // MakeRequests makes the HTTP requests which should be made to fetch bids. infytv
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
 <<<<<<< HEAD
+<<<<<<< HEAD
 	var requests []*adapters.RequestData
 	var errors []error
 
@@ -43,13 +44,18 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		var endpoint string
 =======
 
+=======
+>>>>>>> 93ab7868 (InfyHB fix crash)
 	var requests []*adapters.RequestData
 	var errors []error
-	var endpoint string
 
 	requestCopy := *request
 	for _, imp := range request.Imp {
+<<<<<<< HEAD
 >>>>>>> 309d5d81 (Adding infytvhb)
+=======
+		var endpoint string
+>>>>>>> 93ab7868 (InfyHB fix crash)
 		requestCopy.Imp = []openrtb2.Imp{imp}
 
 		requestJSON, err := json.Marshal(request)
@@ -62,6 +68,7 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		headers.Add("Accept", "application/json")
 		headers.Add("x-openrtb-version", "2.5")
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 		if request.Device != nil {
@@ -91,15 +98,23 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		if infyExt, err := getImpressionExt(&requestCopy.Imp[0]); err != nil {
 			endpoint = infyExt.Base
 >>>>>>> fbf560fc (Update)
+=======
+		if infyExt, err := getImpressionExt(&imp); err != nil {
+			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
+>>>>>>> 93ab7868 (InfyHB fix crash)
 		} else {
-			endpoint = ""
+			endpoint = infyExt.Base
 		}
+<<<<<<< HEAD
 		fmt.Printf("endpoint: %v\n", endpoint)
 <<<<<<< HEAD
 >>>>>>> 309d5d81 (Adding infytvhb)
 =======
 		// endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
 >>>>>>> fbf560fc (Update)
+=======
+
+>>>>>>> 93ab7868 (InfyHB fix crash)
 		requestData := &adapters.RequestData{
 			Method: "POST",
 			Uri:    endpoint,

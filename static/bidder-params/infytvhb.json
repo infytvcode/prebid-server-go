@@ -12,6 +12,9 @@
       "type": "string",
       "description": "customer_id"
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 93ab7868 (InfyHB fix crash)
     },
     "tag_id": {
       "type": "string",
@@ -36,8 +39,11 @@
     "max_cpm": {
       "type": "number",
       "description": "customer_id"
+<<<<<<< HEAD
 =======
 >>>>>>> 309d5d81 (Adding infytvhb)
+=======
+>>>>>>> 93ab7868 (InfyHB fix crash)
     }
   },
   "required": [
