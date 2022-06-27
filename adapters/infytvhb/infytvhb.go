@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/mxmCherry/openrtb/v15/openrtb2"
 	"github.com/prebid/prebid-server/adapters"
@@ -47,12 +45,13 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		headers.Add("Accept", "application/json")
 		headers.Add("x-openrtb-version", "2.5")
 
-		if infyExt, err := getImpressionExt(&imp); err != nil {
-			endpoint = fmt.Sprintf("%s%s", infyExt.Base, infyExt.Path)
+		if infyExt, err := getImpressionExt(&requestCopy.Imp[0]); err != nil {
+			endpoint = infyExt.Base
 		} else {
 			endpoint = ""
 		}
 		fmt.Printf("endpoint: %v\n", endpoint)
+		// endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
 		requestData := &adapters.RequestData{
 			Method: "POST",
 			Uri:    endpoint,
@@ -96,7 +95,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 	for _, sb := range bidResp.SeatBid {
 		for i := range sb.Bid {
 			if bidType, err := getMediaTypeForBid(&sb.Bid[i]); err == nil {
-				resolveMacros(&sb.Bid[i])
+				// resolveMacros(&sb.Bid[i])
 				bidResponse.Bids = append(bidResponse.Bids, &adapters.TypedBid{
 					Bid:     &sb.Bid[i],
 					BidType: bidType,
@@ -114,29 +113,29 @@ func getMediaTypeForBid(bid *openrtb2.Bid) (openrtb_ext.BidType, error) {
 }
 
 // resolveMacros resolves OpenRTB macros in nurl and adm
-func resolveMacros(bid *openrtb2.Bid) {
-	if bid == nil {
-		return
-	}
-	price := strconv.FormatFloat(bid.Price, 'f', -1, 64)
-	bid.NURL = strings.Replace(bid.NURL, "${AUCTION_PRICE}", price, -1)
-	bid.AdM = strings.Replace(bid.AdM, "${AUCTION_PRICE}", price, -1)
-}
+// func resolveMacros(bid *openrtb2.Bid) {
+// 	if bid == nil {
+// 		return
+// 	}
+// 	price := strconv.FormatFloat(bid.Price, 'f', -1, 64)
+// 	bid.NURL = strings.Replace(bid.NURL, "${AUCTION_PRICE}", price, -1)
+// 	bid.AdM = strings.Replace(bid.AdM, "${AUCTION_PRICE}", price, -1)
+// }
 
 // getImpressionExt parses and return first imp ext or nil
-func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ImpExtInfyTvHb, error) {
+func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvhb, error) {
 	var bidderExt adapters.ExtImpBidder
 	if err := json.Unmarshal(imp.Ext, &bidderExt); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
 		}
 	}
-	var extImpInfyTV openrtb_ext.ImpExtInfyTvHb
+
+	var extImpInfyTV openrtb_ext.ExtInfytvhb
 	if err := json.Unmarshal(bidderExt.Bidder, &extImpInfyTV); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
 		}
 	}
-
 	return &extImpInfyTV, nil
 }
