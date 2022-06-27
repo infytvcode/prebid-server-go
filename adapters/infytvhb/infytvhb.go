@@ -26,13 +26,12 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters
 
 // MakeRequests makes the HTTP requests which should be made to fetch bids.
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
-
 	var requests []*adapters.RequestData
 	var errors []error
-	var endpoint string
 
 	requestCopy := *request
 	for _, imp := range request.Imp {
+		var endpoint string
 		requestCopy.Imp = []openrtb2.Imp{imp}
 
 		requestJSON, err := json.Marshal(request)
@@ -45,13 +44,12 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		headers.Add("Accept", "application/json")
 		headers.Add("x-openrtb-version", "2.5")
 
-		if infyExt, err := getImpressionExt(&requestCopy.Imp[0]); err != nil {
-			endpoint = infyExt.Base
+		if infyExt, err := getImpressionExt(&imp); err != nil {
+			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
 		} else {
-			endpoint = ""
+			endpoint = infyExt.Base
 		}
-		fmt.Printf("endpoint: %v\n", endpoint)
-		// endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
+
 		requestData := &adapters.RequestData{
 			Method: "POST",
 			Uri:    endpoint,
