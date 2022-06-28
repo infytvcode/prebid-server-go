@@ -1063,6 +1063,7 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("adapters.zeroclickfraud.endpoint", "http://{{.Host}}/openrtb2?sid={{.SourceId}}")
 	v.SetDefault("adapters.infytvhb.endpoint", "http://nxs.infy.tv/openrtb2/infytv")
 	v.SetDefault("adapters.infytvhb.disabled", "false")
+	v.SetDefault("adapters.infytv.endpoint", "https://nxs.infy.tv/pbs/openrtb")
 
 	v.SetDefault("max_request_size", 1024*256)
 	v.SetDefault("analytics.file.filename", "")
