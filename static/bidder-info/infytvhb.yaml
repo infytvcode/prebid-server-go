@@ -1,12 +1,5 @@
 maintainer:
   email: tech+hb@infy.tv
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-gvlVendorID: 42
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
->>>>>>> fbf560fc (Update)
 modifyingVastXmlAllowed: true
 capabilities:
   app:
@@ -21,13 +14,3 @@ capabilities:
       - video
       - audio
       - native
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-userSync:
-  redirect:
-    url: https://foo.com/sync?gdpr={{.GDPR}}&consent={{.GDPRConsent}}&us_privacy={{.USPrivacy}}&redirect={{.RedirectURL}}
-    userMacro: $UID
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
->>>>>>> fbf560fc (Update)

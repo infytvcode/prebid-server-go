@@ -4,14 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-	"strconv"
-	"strings"
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
->>>>>>> fbf560fc (Update)
 
 	"github.com/mxmCherry/openrtb/v15/openrtb2"
 	"github.com/prebid/prebid-server/adapters"
@@ -32,30 +24,15 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters
 	return bidder, nil
 }
 
-// MakeRequests makes the HTTP requests which should be made to fetch bids. infytv
+// MakeRequests makes the HTTP requests which should be made to fetch bids.
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
-<<<<<<< HEAD
-<<<<<<< HEAD
+
 	var requests []*adapters.RequestData
 	var errors []error
+	var endpoint string
 
 	requestCopy := *request
 	for _, imp := range request.Imp {
-		var endpoint string
-=======
-
-=======
->>>>>>> 93ab7868 (InfyHB fix crash)
-	var requests []*adapters.RequestData
-	var errors []error
-
-	requestCopy := *request
-	for _, imp := range request.Imp {
-<<<<<<< HEAD
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
-		var endpoint string
->>>>>>> 93ab7868 (InfyHB fix crash)
 		requestCopy.Imp = []openrtb2.Imp{imp}
 
 		requestJSON, err := json.Marshal(request)
@@ -68,53 +45,13 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 		headers.Add("Accept", "application/json")
 		headers.Add("x-openrtb-version", "2.5")
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-		if request.Device != nil {
-			if len(request.Device.UA) > 0 {
-				headers.Add("User-Agent", request.Device.UA)
-			}
-
-			if len(request.Device.IPv6) > 0 {
-				headers.Add("X-Forwarded-For", request.Device.IPv6)
-			}
-
-			if len(request.Device.IP) > 0 {
-				headers.Add("X-Forwarded-For", request.Device.IP)
-			}
-		}
-
-		if infyExt, err := getImpressionExt(&imp); err != nil {
-			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
-		} else {
-			endpoint = infyExt.Base
-		}
-
-=======
-		if infyExt, err := getImpressionExt(&imp); err != nil {
-			endpoint = fmt.Sprintf("%s%s", infyExt.Base, infyExt.Path)
-=======
 		if infyExt, err := getImpressionExt(&requestCopy.Imp[0]); err != nil {
 			endpoint = infyExt.Base
->>>>>>> fbf560fc (Update)
-=======
-		if infyExt, err := getImpressionExt(&imp); err != nil {
-			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
->>>>>>> 93ab7868 (InfyHB fix crash)
 		} else {
-			endpoint = infyExt.Base
+			endpoint = ""
 		}
-<<<<<<< HEAD
 		fmt.Printf("endpoint: %v\n", endpoint)
-<<<<<<< HEAD
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
 		// endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
->>>>>>> fbf560fc (Update)
-=======
-
->>>>>>> 93ab7868 (InfyHB fix crash)
 		requestData := &adapters.RequestData{
 			Method: "POST",
 			Uri:    endpoint,
@@ -158,15 +95,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 	for _, sb := range bidResp.SeatBid {
 		for i := range sb.Bid {
 			if bidType, err := getMediaTypeForBid(&sb.Bid[i]); err == nil {
-<<<<<<< HEAD
-<<<<<<< HEAD
 				// resolveMacros(&sb.Bid[i])
-=======
-				resolveMacros(&sb.Bid[i])
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
-				// resolveMacros(&sb.Bid[i])
->>>>>>> fbf560fc (Update)
 				bidResponse.Bids = append(bidResponse.Bids, &adapters.TypedBid{
 					Bid:     &sb.Bid[i],
 					BidType: bidType,
@@ -184,10 +113,6 @@ func getMediaTypeForBid(bid *openrtb2.Bid) (openrtb_ext.BidType, error) {
 }
 
 // resolveMacros resolves OpenRTB macros in nurl and adm
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> fbf560fc (Update)
 // func resolveMacros(bid *openrtb2.Bid) {
 // 	if bid == nil {
 // 		return
@@ -196,56 +121,21 @@ func getMediaTypeForBid(bid *openrtb2.Bid) (openrtb_ext.BidType, error) {
 // 	bid.NURL = strings.Replace(bid.NURL, "${AUCTION_PRICE}", price, -1)
 // 	bid.AdM = strings.Replace(bid.AdM, "${AUCTION_PRICE}", price, -1)
 // }
-<<<<<<< HEAD
 
 // getImpressionExt parses and return first imp ext or nil
 func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvhb, error) {
-=======
-func resolveMacros(bid *openrtb2.Bid) {
-	if bid == nil {
-		return
-	}
-	price := strconv.FormatFloat(bid.Price, 'f', -1, 64)
-	bid.NURL = strings.Replace(bid.NURL, "${AUCTION_PRICE}", price, -1)
-	bid.AdM = strings.Replace(bid.AdM, "${AUCTION_PRICE}", price, -1)
-}
-
-// getImpressionExt parses and return first imp ext or nil
-func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ImpExtInfyTvHb, error) {
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
-
-// getImpressionExt parses and return first imp ext or nil
-func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvhb, error) {
->>>>>>> fbf560fc (Update)
 	var bidderExt adapters.ExtImpBidder
 	if err := json.Unmarshal(imp.Ext, &bidderExt); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
 		}
 	}
-<<<<<<< HEAD
-<<<<<<< HEAD
 
 	var extImpInfyTV openrtb_ext.ExtInfytvhb
-=======
-	var extImpInfyTV openrtb_ext.ImpExtInfyTvHb
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
-
-	var extImpInfyTV openrtb_ext.ExtInfytvhb
->>>>>>> fbf560fc (Update)
 	if err := json.Unmarshal(bidderExt.Bidder, &extImpInfyTV); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
 		}
 	}
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-
->>>>>>> 309d5d81 (Adding infytvhb)
-=======
->>>>>>> fbf560fc (Update)
 	return &extImpInfyTV, nil
 }
