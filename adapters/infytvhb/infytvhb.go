@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/mxmCherry/openrtb/v15/openrtb2"
+	"github.com/mxmCherry/openrtb/v16/openrtb2"
 	"github.com/prebid/prebid-server/adapters"
 	"github.com/prebid/prebid-server/config"
 	"github.com/prebid/prebid-server/errortypes"
@@ -16,7 +16,7 @@ type adapter struct {
 	endpoint string
 }
 
-// Builder builds a new instance of the Adot adapter for the given bidder with the given config.
+// Builder builds a new instance of the InfyTV adapter for the given bidder with the given config.
 func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters.Bidder, error) {
 	bidder := &adapter{
 		endpoint: config.Endpoint,
@@ -24,21 +24,14 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter) (adapters
 	return bidder, nil
 }
 
-// MakeRequests makes the HTTP requests which should be made to fetch bids. infytv
+// MakeRequests makes the HTTP requests which should be made to fetch bids.
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
 	var requests []*adapters.RequestData
 	var errors []error
 
-	requestCopy := *request
 	for _, imp := range request.Imp {
 		var endpoint string
-		requestCopy.Imp = []openrtb2.Imp{imp}
 
-		requestJSON, err := json.Marshal(request)
-		if err != nil {
-			errors = append(errors, err)
-			continue
-		}
 		headers := http.Header{}
 		headers.Add("Content-Type", "application/json;charset=utf-8")
 		headers.Add("Accept", "application/json")
@@ -58,18 +51,29 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 			}
 		}
 
-		if infyExt, err := getImpressionExt(&imp); err != nil {
-			endpoint = "http://dsp.infy.tv/rtb/bids/nexage"
-		} else {
+		if infyExt, err := getImpressionExt(&imp); err == nil {
 			endpoint = infyExt.Base
+
+			reqCopy := *request
+			reqCopy.Imp = []openrtb2.Imp{}
+			imp.Ext = nil
+			imp.PMP = nil
+			imp.BidFloor = 0
+			reqCopy.Imp = append(reqCopy.Imp, imp)
+			reqCopy.Ext = nil
+			requestJSON, err := json.Marshal(reqCopy)
+			if err != nil {
+				errors = append(errors, err)
+				continue
+			}
+			requestData := &adapters.RequestData{
+				Method: "POST",
+				Uri:    endpoint,
+				Body:   requestJSON,
+			}
+			requests = append(requests, requestData)
 		}
 
-		requestData := &adapters.RequestData{
-			Method: "POST",
-			Uri:    endpoint,
-			Body:   requestJSON,
-		}
-		requests = append(requests, requestData)
 	}
 	return requests, errors
 }

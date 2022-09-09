@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
-  "title": "InfyTV Adapter Params",
+  "title": "InfyTV_HB Adapter Params",
   "description": "A schema which validates params accepted by the InfyTV adapter",
   "type": "object",
   "properties": {
