@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,17 +54,14 @@ type Configuration struct {
 	StoredVideo     StoredRequests `mapstructure:"stored_video_req"`
 	StoredResponses StoredRequests `mapstructure:"stored_responses"`
 
-	// Adapters should have a key for every openrtb_ext.BidderName, converted to lower-case.
-	// Se also: https://github.com/spf13/viper/issues/371#issuecomment-335388559
-	Adapters             map[string]Adapter `mapstructure:"adapters"`
-	MaxRequestSize       int64              `mapstructure:"max_request_size"`
-	Analytics            Analytics          `mapstructure:"analytics"`
-	AMPTimeoutAdjustment int64              `mapstructure:"amp_timeout_adjustment_ms"`
-	GDPR                 GDPR               `mapstructure:"gdpr"`
-	CCPA                 CCPA               `mapstructure:"ccpa"`
-	LMT                  LMT                `mapstructure:"lmt"`
-	CurrencyConverter    CurrencyConverter  `mapstructure:"currency_converter"`
-	DefReqConfig         DefReqConfig       `mapstructure:"default_request"`
+	MaxRequestSize       int64             `mapstructure:"max_request_size"`
+	Analytics            Analytics         `mapstructure:"analytics"`
+	AMPTimeoutAdjustment int64             `mapstructure:"amp_timeout_adjustment_ms"`
+	GDPR                 GDPR              `mapstructure:"gdpr"`
+	CCPA                 CCPA              `mapstructure:"ccpa"`
+	LMT                  LMT               `mapstructure:"lmt"`
+	CurrencyConverter    CurrencyConverter `mapstructure:"currency_converter"`
+	DefReqConfig         DefReqConfig      `mapstructure:"default_request"`
 
 	VideoStoredRequestRequired bool `mapstructure:"video_stored_request_required"`
 
@@ -97,6 +95,10 @@ type Configuration struct {
 	HostSChainNode    *openrtb2.SupplyChainNode `mapstructure:"host_schain_node"`
 	// Experiment configures non-production ready features.
 	Experiment Experiment `mapstructure:"experiment"`
+
+	// BidderInfos supports adapter overrides in extra configs like pbs.json, pbs.yaml, etc.
+	// Refers to main.go `configFileName` constant
+	BidderInfos BidderInfos `mapstructure:"adapters"`
 }
 
 const MIN_COOKIE_SIZE_BYTES = 500
@@ -122,7 +124,6 @@ func (cfg *Configuration) validate(v *viper.Viper) []error {
 	}
 	errs = cfg.GDPR.validate(v, errs)
 	errs = cfg.CurrencyConverter.validate(errs)
-	errs = validateAdapters(cfg.Adapters, errs)
 	errs = cfg.Debug.validate(errs)
 	errs = cfg.ExtCacheURL.validate(errs)
 	if cfg.AccountDefaults.Disabled {
@@ -132,6 +133,7 @@ func (cfg *Configuration) validate(v *viper.Viper) []error {
 		glog.Warning(`account_defaults.events will currently not do anything as the feature is still under development. Please follow https://github.com/prebid/prebid-server/issues/1725 for more updates`)
 	}
 	errs = cfg.Experiment.validate(errs)
+	errs = cfg.BidderInfos.validate(errs)
 	return errs
 }
 
@@ -259,11 +261,11 @@ func (cfg *GDPR) validatePurposes(errs []error) []error {
 	}
 
 	for i := 0; i < len(purposeConfigs); i++ {
-		enforcePurposeValue := purposeConfigs[i].EnforcePurpose
-		enforcePurposeField := fmt.Sprintf("gdpr.tcf2.purpose%d.enforce_purpose", (i + 1))
+		enforceAlgoValue := purposeConfigs[i].EnforceAlgo
+		enforceAlgoField := fmt.Sprintf("gdpr.tcf2.purpose%d.enforce_algo", (i + 1))
 
-		if enforcePurposeValue != TCF2NoEnforcement && enforcePurposeValue != TCF2FullEnforcement {
-			errs = append(errs, fmt.Errorf("%s must be \"no\" or \"full\". Got %s", enforcePurposeField, enforcePurposeValue))
+		if enforceAlgoValue != TCF2FullEnforcement {
+			errs = append(errs, fmt.Errorf("%s must be \"full\". Got %s", enforceAlgoField, enforceAlgoValue))
 		}
 	}
 	return errs
@@ -284,7 +286,6 @@ func (t *GDPRTimeouts) ActiveTimeout() time.Duration {
 
 const (
 	TCF2FullEnforcement = "full"
-	TCF2NoEnforcement   = "no"
 )
 
 // TCF2 defines the TCF2 specific configurations for GDPR
@@ -332,10 +333,7 @@ func (t *TCF2) PurposeEnforced(purpose consentconstants.Purpose) (value bool) {
 	if t.PurposeConfigs[purpose] == nil {
 		return false
 	}
-	if t.PurposeConfigs[purpose].EnforcePurpose == TCF2FullEnforcement {
-		return true
-	}
-	return false
+	return t.PurposeConfigs[purpose].EnforcePurpose
 }
 
 // PurposeEnforcingVendors checks if enforcing vendors is turned on for a given purpose. With enforcing vendors
@@ -388,7 +386,8 @@ func (t *TCF2) PurposeOneTreatmentAccessAllowed() (value bool) {
 // Making a purpose struct so purpose specific details can be added later.
 type TCF2Purpose struct {
 	Enabled        bool   `mapstructure:"enabled"` // Deprecated: Use enforce_purpose instead
-	EnforcePurpose string `mapstructure:"enforce_purpose"`
+	EnforceAlgo    string `mapstructure:"enforce_algo"`
+	EnforcePurpose bool   `mapstructure:"enforce_purpose"`
 	EnforceVendors bool   `mapstructure:"enforce_vendors"`
 	// Array of vendor exceptions that is used to create the hash table VendorExceptionMap so vendor names can be instantly accessed
 	VendorExceptions   []openrtb_ext.BidderName `mapstructure:"vendor_exceptions"`
@@ -618,7 +617,7 @@ func (cfg *TimeoutNotification) validate(errs []error) []error {
 }
 
 // New uses viper to get our server configurations.
-func New(v *viper.Viper) (*Configuration, error) {
+func New(v *viper.Viper, bidderInfos BidderInfos) (*Configuration, error) {
 	var c Configuration
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("viper failed to unmarshal app config: %v", err)
@@ -701,6 +700,12 @@ func New(v *viper.Viper) (*Configuration, error) {
 	// Migrate combo stored request config to separate stored_reqs and amp stored_reqs configs.
 	resolvedStoredRequestsConfig(&c)
 
+	mergedBidderInfos, err := applyBidderInfoConfigOverrides(c.BidderInfos, bidderInfos)
+	if err != nil {
+		return nil, err
+	}
+	c.BidderInfos = mergedBidderInfos
+
 	glog.Info("Logging the resolved configuration:")
 	logGeneral(reflect.ValueOf(c), "  \t")
 	if errs := c.validate(v); len(errs) > 0 {
@@ -741,7 +746,7 @@ func (cfg *Configuration) GetCachedAssetURL(uuid string) string {
 }
 
 // Set the default config values for the viper object we are using.
-func SetupViper(v *viper.Viper, filename string) {
+func SetupViper(v *viper.Viper, filename string, bidderInfos BidderInfos) {
 	if filename != "" {
 		v.SetConfigName(filename)
 		v.AddConfigPath(".")
@@ -1183,7 +1188,7 @@ func SetupViper(v *viper.Viper, filename string) {
 	migrateConfig(v)
 	migrateConfigPurposeOneTreatment(v)
 	migrateConfigSpecialFeature1(v)
-	migrateConfigTCF2PurposeEnabledFlags(v)
+	migrateConfigTCF2PurposeFlags(v)
 
 	// These defaults must be set after the migrate functions because those functions look for the presence of these
 	// config fields and there isn't a way to detect presence of a config field using the viper package if a default
@@ -1198,16 +1203,26 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("gdpr.tcf2.purpose8.enabled", true)
 	v.SetDefault("gdpr.tcf2.purpose9.enabled", true)
 	v.SetDefault("gdpr.tcf2.purpose10.enabled", true)
-	v.SetDefault("gdpr.tcf2.purpose1.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose2.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose3.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose4.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose5.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose6.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose7.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose8.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose9.enforce_purpose", TCF2FullEnforcement)
-	v.SetDefault("gdpr.tcf2.purpose10.enforce_purpose", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose1.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose2.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose3.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose4.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose5.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose6.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose7.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose8.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose9.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose10.enforce_algo", TCF2FullEnforcement)
+	v.SetDefault("gdpr.tcf2.purpose1.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose2.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose3.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose4.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose5.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose6.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose7.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose8.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose9.enforce_purpose", true)
+	v.SetDefault("gdpr.tcf2.purpose10.enforce_purpose", true)
 	v.SetDefault("gdpr.tcf2.purpose_one_treatment.enabled", true)
 	v.SetDefault("gdpr.tcf2.purpose_one_treatment.access_allowed", true)
 	v.SetDefault("gdpr.tcf2.special_feature1.enforce", true)
@@ -1223,6 +1238,10 @@ func SetupViper(v *viper.Viper, filename string) {
 	v.SetDefault("experiment.adscert.inprocess.domain_renewal_interval_seconds", 30)
 	v.SetDefault("experiment.adscert.remote.url", "")
 	v.SetDefault("experiment.adscert.remote.signing_timeout_ms", 5)
+
+	for bidderName := range bidderInfos {
+		setBidderDefaults(v, strings.ToLower(bidderName))
+	}
 }
 
 func migrateConfig(v *viper.Viper) {
@@ -1263,6 +1282,41 @@ func migrateConfigSpecialFeature1(v *viper.Viper) {
 	}
 }
 
+func migrateConfigTCF2PurposeFlags(v *viper.Viper) {
+	migrateConfigTCF2EnforcePurposeFlags(v)
+	migrateConfigTCF2PurposeEnabledFlags(v)
+}
+
+func migrateConfigTCF2EnforcePurposeFlags(v *viper.Viper) {
+	for i := 1; i <= 10; i++ {
+		algoField := fmt.Sprintf("gdpr.tcf2.purpose%d.enforce_algo", i)
+		purposeField := fmt.Sprintf("gdpr.tcf2.purpose%d.enforce_purpose", i)
+
+		if !v.IsSet(purposeField) {
+			continue
+		}
+		if _, ok := v.Get(purposeField).(string); !ok {
+			continue
+		}
+		if v.IsSet(algoField) {
+			glog.Warningf("using %s and ignoring deprecated %s string type", algoField, purposeField)
+		} else {
+			v.Set(algoField, TCF2FullEnforcement)
+
+			glog.Warningf("setting %s to \"%s\" based on deprecated %s string type \"%s\"", algoField, TCF2FullEnforcement, purposeField, v.GetString(purposeField))
+		}
+
+		oldPurposeFieldValue := v.GetString(purposeField)
+		newPurposeFieldValue := "false"
+		if oldPurposeFieldValue == TCF2FullEnforcement {
+			newPurposeFieldValue = "true"
+		}
+
+		glog.Warningf("converting %s from string \"%s\" to bool \"%s\"; string type is deprecated", purposeField, oldPurposeFieldValue, newPurposeFieldValue)
+		v.Set(purposeField, newPurposeFieldValue)
+	}
+}
+
 func migrateConfigTCF2PurposeEnabledFlags(v *viper.Viper) {
 	for i := 1; i <= 10; i++ {
 		oldField := fmt.Sprintf("gdpr.tcf2.purpose%d.enabled", i)
@@ -1274,36 +1328,32 @@ func migrateConfigTCF2PurposeEnabledFlags(v *viper.Viper) {
 				glog.Warningf("using %s and ignoring deprecated %s", newField, oldField)
 			} else {
 				glog.Warningf("%s is deprecated and should be changed to %s", oldField, newField)
-				if oldConfig {
-					v.Set(newField, TCF2FullEnforcement)
-				} else {
-					v.Set(newField, TCF2NoEnforcement)
-				}
+				v.Set(newField, oldConfig)
 			}
 		}
 
 		if v.IsSet(newField) {
-			if v.GetString(newField) == TCF2FullEnforcement {
-				v.Set(oldField, "true")
-			} else {
-				v.Set(oldField, "false")
-			}
+			v.Set(oldField, strconv.FormatBool(v.GetBool(newField)))
 		}
 	}
 }
 
 func setBidderDefaults(v *viper.Viper, bidder string) {
 	adapterCfgPrefix := "adapters." + bidder
-	v.SetDefault(adapterCfgPrefix+".endpoint", "")
-	v.SetDefault(adapterCfgPrefix+".usersync_url", "")
-	v.SetDefault(adapterCfgPrefix+".platform_id", "")
-	v.SetDefault(adapterCfgPrefix+".app_secret", "")
-	v.SetDefault(adapterCfgPrefix+".xapi.username", "")
-	v.SetDefault(adapterCfgPrefix+".xapi.password", "")
-	v.SetDefault(adapterCfgPrefix+".xapi.tracker", "")
-	v.SetDefault(adapterCfgPrefix+".disabled", false)
-	v.SetDefault(adapterCfgPrefix+".partner_id", "")
-	v.SetDefault(adapterCfgPrefix+".extra_info", "")
+	v.BindEnv(adapterCfgPrefix+".disabled", "")
+	v.BindEnv(adapterCfgPrefix+".endpoint", "")
+	v.BindEnv(adapterCfgPrefix+".extra_info", "")
+	v.BindEnv(adapterCfgPrefix+".modifyingVastXmlAllowed", "")
+	v.BindEnv(adapterCfgPrefix+".debug.allow", "")
+	v.BindEnv(adapterCfgPrefix+".gvlVendorID", "")
+	v.BindEnv(adapterCfgPrefix+".usersync_url", "")
+	v.BindEnv(adapterCfgPrefix+".experiment.adsCert.enabled", "")
+	v.BindEnv(adapterCfgPrefix+".platform_id", "")
+	v.BindEnv(adapterCfgPrefix+".app_secret", "")
+	v.BindEnv(adapterCfgPrefix+".xapi.username", "")
+	v.BindEnv(adapterCfgPrefix+".xapi.password", "")
+	v.BindEnv(adapterCfgPrefix+".xapi.tracker", "")
+	v.BindEnv(adapterCfgPrefix+".endpointCompression", "")
 
 	v.BindEnv(adapterCfgPrefix + ".usersync.key")
 	v.BindEnv(adapterCfgPrefix + ".usersync.default")
