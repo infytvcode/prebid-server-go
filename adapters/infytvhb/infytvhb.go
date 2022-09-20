@@ -56,9 +56,9 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 
 			reqCopy := *request
 			reqCopy.Imp = []openrtb2.Imp{}
+			reqCopy.Test = 0
 			imp.Ext = nil
 			imp.PMP = nil
-			imp.BidFloor = 0
 			reqCopy.Imp = append(reqCopy.Imp, imp)
 			reqCopy.Ext = nil
 			requestJSON, err := json.Marshal(reqCopy)
