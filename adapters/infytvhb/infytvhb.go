@@ -66,12 +66,21 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 				errors = append(errors, err)
 				continue
 			}
-			requestData := &adapters.RequestData{
-				Method: "POST",
-				Uri:    endpoint,
-				Body:   requestJSON,
+			if infyExt.EndpointType == "VAST_URL" {
+				requestData := &adapters.RequestData{
+					Method: "GET",
+					Uri:    endpoint,
+				}
+				requests = append(requests, requestData)
+			} else {
+				requestData := &adapters.RequestData{
+					Method:  "POST",
+					Uri:     endpoint,
+					Body:    requestJSON,
+					Headers: headers,
+				}
+				requests = append(requests, requestData)
 			}
-			requests = append(requests, requestData)
 		}
 
 	}
@@ -96,10 +105,31 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 			Message: fmt.Sprintf("Unexpected status code: %d. Run with request.debug = 1 for more info", response.StatusCode),
 		}}
 	}
-
 	var bidResp openrtb2.BidResponse
-	if err := json.Unmarshal(response.Body, &bidResp); err != nil {
-		return nil, []error{err}
+	if infyExt, err := getImpressionExt(&internalRequest.Imp[0]); err == nil {
+		if infyExt.EndpointType == "VAST_URL" {
+			bidResp = openrtb2.BidResponse{
+				ID: internalRequest.ID,
+				SeatBid: []openrtb2.SeatBid{
+					{
+						Bid: []openrtb2.Bid{
+							{
+								ID:    internalRequest.ID,
+								AdM:   string(response.Body),
+								Price: infyExt.Floor,
+								ImpID: internalRequest.Imp[0].ID,
+								CID:   "c_" + internalRequest.ID,
+								CrID:  "cr_" + internalRequest.ID,
+							},
+						},
+					},
+				},
+			}
+		} else {
+			if err := json.Unmarshal(response.Body, &bidResp); err != nil {
+				return nil, []error{err}
+			}
+		}
 	}
 
 	bidsCapacity := 1
