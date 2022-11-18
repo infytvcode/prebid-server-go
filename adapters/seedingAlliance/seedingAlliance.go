@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mxmCherry/openrtb/v16/openrtb2"
+	"github.com/prebid/openrtb/v17/openrtb2"
 	"github.com/prebid/prebid-server/adapters"
 	"github.com/prebid/prebid-server/config"
 	"github.com/prebid/prebid-server/errortypes"
@@ -18,7 +18,7 @@ type adapter struct {
 	endpoint string
 }
 
-func Builder(_ openrtb_ext.BidderName, config config.Adapter) (adapters.Bidder, error) {
+func Builder(_ openrtb_ext.BidderName, config config.Adapter, server config.Server) (adapters.Bidder, error) {
 	bidder := &adapter{
 		endpoint: config.Endpoint,
 	}
@@ -118,9 +118,9 @@ func getMediaTypeForBid(ext json.RawMessage) (openrtb_ext.BidType, error) {
 	return openrtb_ext.ParseBidType(string(bidExt.Prebid.Type))
 }
 
-func curExists(cc []string, c string) bool {
-	for i := range cc {
-		if cc[i] == c {
+func curExists(allowedCurrencies []string, newCurrency string) bool {
+	for i := range allowedCurrencies {
+		if allowedCurrencies[i] == newCurrency {
 			return true
 		}
 	}
