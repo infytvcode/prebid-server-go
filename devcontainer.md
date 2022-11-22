@@ -65,3 +65,6 @@ above each test function.
 - Remote container commands popup by clicking on _Dev Container: Go_ at bottom left
 - `F1` -> type _rebuild container_ to restart with a fresh container
 - `F1` -> `^`-`\`` to toggle terminal
+
+
+PBS_GDPR_DEFAULT_VALUE=0 go run main.go --alsologtostderr
