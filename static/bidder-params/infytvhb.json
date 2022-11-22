@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "InfyTV_HB Adapter Params",
+  "description": "A schema which validates params accepted by the InfyTV adapter",
+  "type": "object",
+  "properties": {
+    "dsp_id": {
+      "type": "string",
+      "description": "dsp_id"
+    },
+    "customer_id": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "tag_id": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "description": "endpoint_id"
+    },
+    "deal_id": {
+      "type": "string",
+      "description": "deal_id"
+    },
+    "base": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "path": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "dsp_type": {
+      "type": "string",
+      "description": "customer_id"
+    },
+    "min_cpm": {
+      "type": "number",
+      "description": "customer_id"
+    },
+    "max_cpm": {
+      "type": "number",
+      "description": "customer_id"
+    }
+  },
+  "required": [
+    "dsp_id",
+    "customer_id",
+    "endpoint_id"
+  ]
+}

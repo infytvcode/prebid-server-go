@@ -162,6 +162,7 @@ const (
 	BidderImpactify         BidderName = "impactify"
 	BidderImprovedigital    BidderName = "improvedigital"
 	BidderInfyTV            BidderName = "infytv"
+	BidderInfyTVHb          BidderName = "infytvhb"
 	BidderInMobi            BidderName = "inmobi"
 	BidderInteractiveoffers BidderName = "interactiveoffers"
 	BidderInvibes           BidderName = "invibes"
@@ -331,6 +332,7 @@ func CoreBidderNames() []BidderName {
 		BidderImpactify,
 		BidderImprovedigital,
 		BidderInfyTV,
+		BidderInfyTVHb,
 		BidderInMobi,
 		BidderInteractiveoffers,
 		BidderInvibes,

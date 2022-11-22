@@ -1,0 +1,17 @@
+maintainer:
+  email: tech+hb@infy.tv
+modifyingVastXmlAllowed: true
+endpoint: "https://nxs.infy.tv/pbs/openrtb"
+capabilities:
+  app:
+    mediaTypes:
+      - banner
+      - video
+      - audio
+      - native
+  site:
+    mediaTypes:
+      - banner
+      - video
+      - audio
+      - native
