@@ -25,18 +25,65 @@ func Builder(bidderName openrtb_ext.BidderName, config config.Adapter, server co
 }
 
 func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
-	requestJSON, err := json.Marshal(request)
-	if err != nil {
-		return nil, []error{err}
-	}
+	var requests []*adapters.RequestData
+	var errors []error
 
-	requestData := &adapters.RequestData{
-		Method: "POST",
-		Uri:    a.endpoint,
-		Body:   requestJSON,
-	}
+	for _, imp := range request.Imp {
+		var endpoint string
 
-	return []*adapters.RequestData{requestData}, nil
+		headers := http.Header{}
+		headers.Add("Content-Type", "application/json;charset=utf-8")
+		headers.Add("Accept", "application/json")
+		headers.Add("x-openrtb-version", "2.5")
+
+		if request.Device != nil {
+			if len(request.Device.UA) > 0 {
+				headers.Add("User-Agent", request.Device.UA)
+			}
+
+			if len(request.Device.IPv6) > 0 {
+				headers.Add("X-Forwarded-For", request.Device.IPv6)
+			}
+
+			if len(request.Device.IP) > 0 {
+				headers.Add("X-Forwarded-For", request.Device.IP)
+			}
+		}
+
+		if infyExt, err := getImpressionExt(&imp); err == nil {
+			endpoint = infyExt.Base
+
+			reqCopy := *request
+			reqCopy.Imp = []openrtb2.Imp{}
+			reqCopy.Test = 0
+			imp.Ext = nil
+			imp.PMP = nil
+			reqCopy.Imp = append(reqCopy.Imp, imp)
+			reqCopy.Ext = nil
+			requestJSON, err := json.Marshal(reqCopy)
+			if err != nil {
+				errors = append(errors, err)
+				continue
+			}
+			if infyExt.EndpointType == "VAST_URL" {
+				requestData := &adapters.RequestData{
+					Method: "GET",
+					Uri:    endpoint,
+				}
+				requests = append(requests, requestData)
+			} else {
+				requestData := &adapters.RequestData{
+					Method:  "POST",
+					Uri:     endpoint,
+					Body:    requestJSON,
+					Headers: headers,
+				}
+				requests = append(requests, requestData)
+			}
+		}
+
+	}
+	return requests, errors
 }
 
 func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
