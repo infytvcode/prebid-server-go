@@ -68,3 +68,8 @@ Or better yet, [open a pull request](https://github.com/prebid/prebid-server/com
 
 The quickest way to start developing Prebid Server in a reproducible environment isolated from your host OS
 is by using Visual Studio Code with [Remote Container Setup](devcontainer.md).
+
+
+
+`docker build --platform linux/x86_64 -t infytv/infy:hb-2.0.0 .`
+`docker push infytv/infy:hb-2.0.0`

@@ -57,7 +57,8 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 			reqCopy.Imp = []openrtb2.Imp{}
 			reqCopy.Test = 0
 			imp.Ext = nil
-			imp.PMP = nil
+			// imp.PMP = nil
+			imp.BidFloor = infyExt.Floor
 			reqCopy.Imp = append(reqCopy.Imp, imp)
 			reqCopy.Ext = nil
 			requestJSON, err := json.Marshal(reqCopy)
@@ -110,6 +111,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				SeatBid: []openrtb2.SeatBid{
 					{
 						Bid: []openrtb2.Bid{
+							//TODO: update this by parsing VAST
 							{
 								ID:    internalRequest.ID,
 								AdM:   string(response.Body),
