@@ -66,7 +66,8 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 				errors = append(errors, err)
 				continue
 			}
-			if infyExt.EndpointType == "VAST_URL" {
+
+			if infyExt.EndpointType == "VAST_URL" || infyExt.EndpointType == "GAM" {
 				requestData := &adapters.RequestData{
 					Method: "GET",
 					Uri:    endpoint,
