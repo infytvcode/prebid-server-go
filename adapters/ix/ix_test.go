@@ -104,6 +104,56 @@ func TestIxMakeBidsWithCategoryDuration(t *testing.T) {
 	}
 }
 
+func TestIxMakeRequestWithGppString(t *testing.T) {
+	bidder := &IxAdapter{}
+	bidder.maxRequests = 2
+
+	testGppString := "DBACNYA~CPXxRfAPXxRfAAfKABENB-CgAAAAAAAAAAYgAAAAAAAA~1YNN"
+
+	mockedReq := &openrtb2.BidRequest{
+		Imp: []openrtb2.Imp{{
+			ID: "1_1",
+			Video: &openrtb2.Video{
+				W:           640,
+				H:           360,
+				MIMEs:       []string{"video/mp4"},
+				MaxDuration: 60,
+				Protocols:   []adcom1.MediaCreativeSubtype{2, 3, 5, 6},
+			},
+			Ext: json.RawMessage(
+				`{
+					"prebid": {},
+					"bidder": {
+						"siteID": 123456
+					}
+				}`,
+			)},
+		},
+		Regs: &openrtb2.Regs{
+			GPP: testGppString,
+		},
+	}
+
+	expectedRequestCount := 1
+	expectedErrorCount := 0
+	var reqInfo *adapters.ExtraRequestInfo
+
+	requests, errors := bidder.MakeRequests(mockedReq, reqInfo)
+
+	if len(requests) != expectedRequestCount {
+		t.Errorf("should have 1 request, requests=%v", requests)
+	}
+
+	if len(errors) != expectedErrorCount {
+		t.Errorf("should not have any errors, errors=%v", errors)
+	}
+
+	req := &openrtb2.BidRequest{}
+	json.Unmarshal(requests[0].Body, req)
+
+	assert.Equal(t, req.Regs.GPP, testGppString)
+}
+
 func TestBuildIxDiag(t *testing.T) {
 	testCases := []struct {
 		description     string
@@ -121,6 +171,19 @@ func TestBuildIxDiag(t *testing.T) {
 			expectedRequest: &openrtb2.BidRequest{
 				ID:  "1",
 				Ext: json.RawMessage(`{"prebid":{"channel":{"name":"web","version":"7.20"}},"ixdiag":{"pbsv":"1.880","pbjsv":"7.20"}}`),
+			},
+			expectError: false,
+			pbsVersion:  "1.880-abcdef",
+		},
+		{
+			description: "Base test for nil channel but non-empty ext prebid payload",
+			request: &openrtb2.BidRequest{
+				ID:  "1",
+				Ext: json.RawMessage(`{"prebid":{"server":{"externalurl":"http://localhost:8000"}}}`),
+			},
+			expectedRequest: &openrtb2.BidRequest{
+				ID:  "1",
+				Ext: json.RawMessage(`{"prebid":{"server":{"externalurl":"http://localhost:8000","gvlid":0,"datacenter":""}},"ixdiag":{"pbsv":"1.880"}}`),
 			},
 			expectError: false,
 			pbsVersion:  "1.880-abcdef",
@@ -191,15 +254,16 @@ func TestBuildIxDiag(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		version.Ver = test.pbsVersion
-		err := BuildIxDiag(test.request)
-		if test.expectError {
-			assert.NotNil(t, err)
-		} else {
-			assert.Equal(t, test.request, test.expectedRequest)
-			assert.Nil(t, err)
-		}
-		version.Ver = ""
+		t.Run(test.description, func(t *testing.T) {
+			version.Ver = test.pbsVersion
+			err := BuildIxDiag(test.request)
+			if test.expectError {
+				assert.NotNil(t, err)
+			} else {
+				assert.Equal(t, test.expectedRequest, test.request)
+				assert.Nil(t, err)
+			}
+		})
 	}
 }
 
