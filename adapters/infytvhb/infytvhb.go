@@ -118,6 +118,8 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 								AdM:   string(response.Body),
 								Price: infyExt.Floor,
 								ImpID: internalRequest.Imp[0].ID,
+								CID:   "-",
+								CrID:  "-",
 							},
 						},
 					},
