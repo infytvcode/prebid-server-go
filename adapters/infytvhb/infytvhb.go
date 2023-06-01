@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/prebid/openrtb/v17/openrtb2"
+	"github.com/prebid/openrtb/v19/openrtb2"
 	"github.com/prebid/prebid-server/adapters"
 	"github.com/prebid/prebid-server/config"
 	"github.com/prebid/prebid-server/errortypes"
@@ -66,7 +66,6 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 				errors = append(errors, err)
 				continue
 			}
-
 			if infyExt.EndpointType == "VAST_URL" || infyExt.EndpointType == "GAM" {
 				requestData := &adapters.RequestData{
 					Method: "GET",
@@ -74,6 +73,8 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 				}
 				requests = append(requests, requestData)
 			} else {
+				fmt.Printf("endpoint: %v\n", endpoint)
+				fmt.Printf("requestJSON: %v\n", string(requestJSON))
 				requestData := &adapters.RequestData{
 					Method:  "POST",
 					Uri:     endpoint,
@@ -128,6 +129,16 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 		} else {
 			if err := json.Unmarshal(response.Body, &bidResp); err != nil {
 				return nil, []error{err}
+			}
+			for i, sb := range bidResp.SeatBid {
+				for j, b := range sb.Bid {
+					if b.CID == "" {
+						bidResp.SeatBid[i].Bid[j].CID = "-"
+					}
+					if b.CrID == "" {
+						bidResp.SeatBid[i].Bid[j].CrID = "-"
+					}
+				}
 			}
 		}
 	}
