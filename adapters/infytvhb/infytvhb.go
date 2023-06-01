@@ -73,8 +73,6 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 				}
 				requests = append(requests, requestData)
 			} else {
-				fmt.Printf("endpoint: %v\n", endpoint)
-				fmt.Printf("requestJSON: %v\n", string(requestJSON))
 				requestData := &adapters.RequestData{
 					Method:  "POST",
 					Uri:     endpoint,
