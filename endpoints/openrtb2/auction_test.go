@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,14 +18,16 @@ import (
 
 	"github.com/buger/jsonparser"
 	"github.com/julienschmidt/httprouter"
-	"github.com/prebid/openrtb/v17/native1"
-	nativeRequests "github.com/prebid/openrtb/v17/native1/request"
-	"github.com/prebid/openrtb/v17/openrtb2"
+	"github.com/prebid/openrtb/v19/native1"
+	nativeRequests "github.com/prebid/openrtb/v19/native1/request"
+	"github.com/prebid/openrtb/v19/openrtb2"
+	"github.com/prebid/prebid-server/adapters"
 	"github.com/prebid/prebid-server/analytics"
 	"github.com/prebid/prebid-server/hooks"
 	"github.com/prebid/prebid-server/hooks/hookexecution"
 	"github.com/prebid/prebid-server/hooks/hookstage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 
 	analyticsConf "github.com/prebid/prebid-server/analytics/config"
 	"github.com/prebid/prebid-server/config"
@@ -38,6 +41,8 @@ import (
 	"github.com/prebid/prebid-server/util/iputil"
 	"github.com/prebid/prebid-server/util/ptrutil"
 )
+
+const jsonFileExtension string = ".json"
 
 func TestJsonSampleRequests(t *testing.T) {
 	testSuites := []struct {
@@ -112,49 +117,71 @@ func TestJsonSampleRequests(t *testing.T) {
 			"Assert request with ad server targeting is processing correctly",
 			"adservertargeting",
 		},
+		{
+			"Assert request with bid adjustments defined is processing correctly",
+			"bidadjustments",
+		},
 	}
 
 	for _, tc := range testSuites {
-		testCaseFiles, err := getTestFiles(filepath.Join("sample-requests", tc.sampleRequestsSubDir))
-		if assert.NoError(t, err, "Test case %s. Error reading files from directory %s \n", tc.description, tc.sampleRequestsSubDir) {
-			for _, testFile := range testCaseFiles {
-				fileData, err := os.ReadFile(testFile)
-				if assert.NoError(t, err, "Test case %s. Error reading file %s \n", tc.description, testFile) {
-					// Retrieve test case input and expected output from JSON file
-					test, err := parseTestFile(fileData, testFile)
-					if !assert.NoError(t, err) {
-						continue
-					}
-
-					// Build endpoint for testing. If no error, run test case
-					cfg := &config.Configuration{MaxRequestSize: maxSize}
-					if test.Config != nil {
-						cfg.BlacklistedApps = test.Config.BlacklistedApps
-						cfg.BlacklistedAppMap = test.Config.getBlacklistedAppMap()
-						cfg.BlacklistedAccts = test.Config.BlacklistedAccounts
-						cfg.BlacklistedAcctMap = test.Config.getBlackListedAccountMap()
-						cfg.AccountRequired = test.Config.AccountRequired
-					}
-					cfg.MarshalAccountDefaults()
-					test.endpointType = OPENRTB_ENDPOINT
-
-					auctionEndpointHandler, _, mockBidServers, mockCurrencyRatesServer, err := buildTestEndpoint(test, cfg)
-					if assert.NoError(t, err) {
-						assert.NotPanics(t, func() { runTestCase(t, auctionEndpointHandler, test, fileData, testFile) }, testFile)
-					}
-
-					// Close servers regardless if the test case was run or not
-					for _, mockBidServer := range mockBidServers {
-						mockBidServer.Close()
-					}
-					mockCurrencyRatesServer.Close()
-				}
+		err := filepath.WalkDir(filepath.Join("sample-requests", tc.sampleRequestsSubDir), func(path string, info fs.DirEntry, err error) error {
+			// According to documentation, needed to avoid panics
+			if err != nil {
+				return err
 			}
-		}
+
+			// Test suite will traverse the directory tree recursively and will only consider files with `json` extension
+			if !info.IsDir() && filepath.Ext(info.Name()) == jsonFileExtension {
+				t.Run(tc.description, func(t *testing.T) {
+					runJsonBasedTest(t, path, tc.description)
+				})
+			}
+
+			return nil
+		})
+		assert.NoError(t, err, "Test case %s. Error reading files from directory %s \n", tc.description, tc.sampleRequestsSubDir)
 	}
 }
 
-func runTestCase(t *testing.T, auctionEndpointHandler httprouter.Handle, test testCase, fileData []byte, testFile string) {
+func runJsonBasedTest(t *testing.T, filename, desc string) {
+	t.Helper()
+
+	fileData, err := os.ReadFile(filename)
+	if !assert.NoError(t, err, "Test case %s. Error reading file %s \n", desc, filename) {
+		return
+	}
+
+	// Retrieve test case input and expected output from JSON file
+	test, err := parseTestData(fileData, filename)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	// Build endpoint for testing. If no error, run test case
+	cfg := &config.Configuration{MaxRequestSize: maxSize}
+	if test.Config != nil {
+		cfg.BlacklistedApps = test.Config.BlacklistedApps
+		cfg.BlacklistedAppMap = test.Config.getBlacklistedAppMap()
+		cfg.BlacklistedAccts = test.Config.BlacklistedAccounts
+		cfg.BlacklistedAcctMap = test.Config.getBlackListedAccountMap()
+		cfg.AccountRequired = test.Config.AccountRequired
+	}
+	cfg.MarshalAccountDefaults()
+	test.endpointType = OPENRTB_ENDPOINT
+
+	auctionEndpointHandler, _, mockBidServers, mockCurrencyRatesServer, err := buildTestEndpoint(test, cfg)
+	if assert.NoError(t, err) {
+		assert.NotPanics(t, func() { runEndToEndTest(t, auctionEndpointHandler, test, fileData, filename) }, filename)
+	}
+
+	// Close servers regardless if the test case was run or not
+	for _, mockBidServer := range mockBidServers {
+		mockBidServer.Close()
+	}
+	mockCurrencyRatesServer.Close()
+}
+
+func runEndToEndTest(t *testing.T, auctionEndpointHandler httprouter.Handle, test testCase, fileData []byte, testFile string) {
 	t.Helper()
 
 	// Hit the auction endpoint with the test case configuration and mockBidRequest
@@ -1118,7 +1145,7 @@ func TestStoredRequests(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	testStoreVideoAttr := []bool{true, true, false, false, false}
@@ -1491,7 +1518,7 @@ func TestValidateRequest(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	testCases := []struct {
@@ -2023,7 +2050,7 @@ func TestSetIntegrationType(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	testCases := []struct {
@@ -2088,7 +2115,7 @@ func TestStoredRequestGenerateUuid(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	req := &openrtb2.BidRequest{}
@@ -2191,7 +2218,7 @@ func TestOversizedRequest(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(reqBody))
@@ -2229,7 +2256,7 @@ func TestRequestSizeEdgeCase(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(reqBody))
@@ -2565,7 +2592,7 @@ func TestValidateImpExt(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	for _, group := range testGroups {
@@ -2617,7 +2644,7 @@ func TestCurrencyTrunc(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -2664,7 +2691,7 @@ func TestCCPAInvalid(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -2715,7 +2742,7 @@ func TestNoSaleInvalid(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -2769,7 +2796,7 @@ func TestValidateSourceTID(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -2813,7 +2840,7 @@ func TestSChainInvalid(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -3308,7 +3335,7 @@ func TestEidPermissionsInvalid(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	ui := int64(1)
@@ -3589,6 +3616,11 @@ func TestAuctionWarnings(t *testing.T) {
 			expectedWarning: "regs.us_privacy consent does not match uspv1 in GPP, using regs.gpp",
 		},
 		{
+			name:            "empty-gppsid-array-conflicts-with-regs-gdpr", // gdpr set to 1, an empty non-nil gpp_sid array doesn't match
+			file:            "empty-gppsid-conflict.json",
+			expectedWarning: "regs.gdpr signal conflicts with GPP (regs.gpp_sid) and will be ignored",
+		},
+		{
 			name:            "gdpr-signals-conflict", // gdpr signals do not match
 			file:            "gdpr-conflict.json",
 			expectedWarning: "regs.gdpr signal conflicts with GPP (regs.gpp_sid) and will be ignored",
@@ -3617,7 +3649,7 @@ func TestAuctionWarnings(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
@@ -3662,12 +3694,14 @@ func TestParseRequestParseImpInfoError(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		empty_fetcher.EmptyFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
+
+	hookExecutor := hookexecution.NewHookExecutor(deps.hookExecutionPlanBuilder, hookexecution.EndpointAuction, deps.metricsEngine)
 
 	req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(reqBody))
 
-	resReq, impExtInfoMap, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{})
+	resReq, impExtInfoMap, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{}, hookExecutor)
 
 	assert.Nil(t, resReq, "Result request should be nil due to incorrect imp")
 	assert.Nil(t, impExtInfoMap, "Impression info map should be nil due to incorrect imp")
@@ -4237,12 +4271,14 @@ func TestParseRequestMergeBidderParams(t *testing.T) {
 				nil,
 				hardcodedResponseIPValidator{response: true},
 				empty_fetcher.EmptyFetcher{},
-				hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+				hooks.EmptyPlanBuilder{},
 			}
+
+			hookExecutor := hookexecution.NewHookExecutor(deps.hookExecutionPlanBuilder, hookexecution.EndpointAuction, deps.metricsEngine)
 
 			req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(test.givenRequestBody))
 
-			resReq, _, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{})
+			resReq, _, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{}, hookExecutor)
 
 			assert.NoError(t, resReq.RebuildRequest())
 
@@ -4301,13 +4337,10 @@ func TestParseRequestStoredResponses(t *testing.T) {
 			expectedErrorCount: 0,
 		},
 		{
-			name:             "req has two imps with missing stored responses",
-			givenRequestBody: validRequest(t, "req-two-imps-missing-stored-response.json"),
-			expectedStoredResponses: map[string]json.RawMessage{
-				"imp-id1": json.RawMessage(`[{"bid": [{"id": "bid_id1"],"seat": "appnexus"}]`),
-				"imp-id2": json.RawMessage(nil),
-			},
-			expectedErrorCount: 0,
+			name:                    "req has two imps with missing stored responses",
+			givenRequestBody:        validRequest(t, "req-two-imps-missing-stored-response.json"),
+			expectedStoredResponses: nil,
+			expectedErrorCount:      2,
 		},
 		{
 			name:             "req has two imps: one with stored response and another imp without stored resp",
@@ -4340,12 +4373,14 @@ func TestParseRequestStoredResponses(t *testing.T) {
 				nil,
 				hardcodedResponseIPValidator{response: true},
 				&mockStoredResponseFetcher{mockStoredResponses},
-				hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+				hooks.EmptyPlanBuilder{},
 			}
+
+			hookExecutor := hookexecution.NewHookExecutor(deps.hookExecutionPlanBuilder, hookexecution.EndpointAuction, deps.metricsEngine)
 
 			req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(test.givenRequestBody))
 
-			_, _, storedResponses, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{})
+			_, _, storedResponses, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{}, hookExecutor)
 
 			if test.expectedErrorCount == 0 {
 				assert.Equal(t, test.expectedStoredResponses, storedResponses, "stored responses should match")
@@ -4398,13 +4433,10 @@ func TestParseRequestStoredBidResponses(t *testing.T) {
 			expectedErrorCount: 0,
 		},
 		{
-			name:             "req has two imps with missing stored bid responses",
-			givenRequestBody: validRequest(t, "req-two-imps-missing-stored-bid-response.json"),
-			expectedStoredBidResponses: map[string]map[string]json.RawMessage{
-				"imp-id1": {"testBidder1": nil},
-				"imp-id2": {"testBidder2": nil},
-			},
-			expectedErrorCount: 0,
+			name:                       "req has two imps with missing stored bid responses",
+			givenRequestBody:           validRequest(t, "req-two-imps-missing-stored-bid-response.json"),
+			expectedStoredBidResponses: nil,
+			expectedErrorCount:         2,
 		},
 	}
 	for _, test := range tests {
@@ -4428,11 +4460,13 @@ func TestParseRequestStoredBidResponses(t *testing.T) {
 				nil,
 				hardcodedResponseIPValidator{response: true},
 				&mockStoredResponseFetcher{mockStoredBidResponses},
-				hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+				hooks.EmptyPlanBuilder{},
 			}
 
+			hookExecutor := hookexecution.NewHookExecutor(deps.hookExecutionPlanBuilder, hookexecution.EndpointAuction, deps.metricsEngine)
+
 			req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(test.givenRequestBody))
-			_, _, _, storedBidResponses, _, _, errL := deps.parseRequest(req, &metrics.Labels{})
+			_, _, _, storedBidResponses, _, _, errL := deps.parseRequest(req, &metrics.Labels{}, hookExecutor)
 
 			if test.expectedErrorCount == 0 {
 				assert.Equal(t, test.expectedStoredBidResponses, storedBidResponses, "stored responses should match")
@@ -4462,7 +4496,7 @@ func TestValidateStoredResp(t *testing.T) {
 		nil,
 		hardcodedResponseIPValidator{response: true},
 		&mockStoredResponseFetcher{},
-		hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+		hooks.EmptyPlanBuilder{},
 	}
 
 	testCases := []struct {
@@ -5085,7 +5119,7 @@ func TestValidResponseAfterExecutingStages(t *testing.T) {
 			fileData, err := os.ReadFile(tc.file)
 			assert.NoError(t, err, "Failed to read test file.")
 
-			test, err := parseTestFile(fileData, tc.file)
+			test, err := parseTestData(fileData, tc.file)
 			assert.NoError(t, err, "Failed to parse test file.")
 			test.planBuilder = tc.planBuilder
 			test.endpointType = OPENRTB_ENDPOINT
@@ -5269,12 +5303,14 @@ func TestParseRequestMultiBid(t *testing.T) {
 				nil,
 				hardcodedResponseIPValidator{response: true},
 				empty_fetcher.EmptyFetcher{},
-				hookexecution.NewHookExecutor(hooks.EmptyPlanBuilder{}, hookexecution.EndpointAuction, &metricsConfig.NilMetricsEngine{}),
+				hooks.EmptyPlanBuilder{},
 			}
+
+			hookExecutor := hookexecution.NewHookExecutor(deps.hookExecutionPlanBuilder, hookexecution.EndpointAuction, deps.metricsEngine)
 
 			req := httptest.NewRequest("POST", "/openrtb2/auction", strings.NewReader(test.givenRequestBody))
 
-			resReq, _, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{})
+			resReq, _, _, _, _, _, errL := deps.parseRequest(req, &metrics.Labels{}, hookExecutor)
 
 			assert.NoError(t, resReq.RebuildRequest())
 
@@ -5330,4 +5366,13 @@ type mockStageExecutor struct {
 
 func (e mockStageExecutor) GetOutcomes() []hookexecution.StageOutcome {
 	return e.outcomes
+}
+
+func TestRecordResponsePreparationMetrics(t *testing.T) {
+	mbi := map[openrtb_ext.BidderName]adapters.MakeBidsTimeInfo{
+		openrtb_ext.BidderAppnexus: {Durations: []time.Duration{10, 15}, AfterMakeBidsStartTime: time.Now()},
+	}
+	mockMetricEngine := &metrics.MetricsEngineMock{}
+	mockMetricEngine.On("RecordOverheadTime", metrics.MakeAuctionResponse, mock.Anything)
+	recordResponsePreparationMetrics(mbi, mockMetricEngine)
 }

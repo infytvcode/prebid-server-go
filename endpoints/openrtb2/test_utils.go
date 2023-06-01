@@ -10,15 +10,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/buger/jsonparser"
 	"github.com/julienschmidt/httprouter"
-	"github.com/prebid/openrtb/v17/openrtb2"
-	"github.com/prebid/openrtb/v17/openrtb3"
+	"github.com/prebid/openrtb/v19/openrtb2"
+	"github.com/prebid/openrtb/v19/openrtb3"
 	"github.com/prebid/prebid-server/adapters"
 	"github.com/prebid/prebid-server/analytics"
 	analyticsConf "github.com/prebid/prebid-server/analytics/config"
@@ -31,6 +30,7 @@ import (
 	"github.com/prebid/prebid-server/hooks"
 	"github.com/prebid/prebid-server/hooks/hookexecution"
 	"github.com/prebid/prebid-server/hooks/hookstage"
+	"github.com/prebid/prebid-server/macros"
 	"github.com/prebid/prebid-server/metrics"
 	metricsConfig "github.com/prebid/prebid-server/metrics/config"
 	"github.com/prebid/prebid-server/openrtb_ext"
@@ -94,7 +94,7 @@ type testConfigValues struct {
 
 type brokenExchange struct{}
 
-func (e *brokenExchange) HoldAuction(ctx context.Context, r exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
+func (e *brokenExchange) HoldAuction(ctx context.Context, r *exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
 	return nil, errors.New("Critical, unrecoverable error.")
 }
 
@@ -848,7 +848,7 @@ type mockExchange struct {
 	lastRequest *openrtb2.BidRequest
 }
 
-func (m *mockExchange) HoldAuction(ctx context.Context, auctionRequest exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
+func (m *mockExchange) HoldAuction(ctx context.Context, auctionRequest *exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
 	r := auctionRequest.BidRequestWrapper
 	m.lastRequest = r.BidRequest
 	return &openrtb2.BidResponse{
@@ -885,8 +885,8 @@ type warningsCheckExchange struct {
 	auctionRequest exchange.AuctionRequest
 }
 
-func (e *warningsCheckExchange) HoldAuction(ctx context.Context, r exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
-	e.auctionRequest = r
+func (e *warningsCheckExchange) HoldAuction(ctx context.Context, r *exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
+	e.auctionRequest = *r
 	return nil, nil
 }
 
@@ -896,7 +896,7 @@ type nobidExchange struct {
 	gotRequest *openrtb2.BidRequest
 }
 
-func (e *nobidExchange) HoldAuction(ctx context.Context, auctionRequest exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
+func (e *nobidExchange) HoldAuction(ctx context.Context, auctionRequest *exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
 	r := auctionRequest.BidRequestWrapper
 	e.gotRequest = r.BidRequest
 	return &openrtb2.BidResponse{
@@ -936,6 +936,7 @@ type mockBidderHandler struct {
 	BidderName string  `json:"bidderName"`
 	Currency   string  `json:"currency"`
 	Price      float64 `json:"price"`
+	DealID     string  `json:"dealid"`
 }
 
 func (b mockBidderHandler) bid(w http.ResponseWriter, req *http.Request) {
@@ -970,9 +971,10 @@ func (b mockBidderHandler) bid(w http.ResponseWriter, req *http.Request) {
 			{
 				Bid: []openrtb2.Bid{
 					{
-						ID:    b.BidderName + "-bid",
-						ImpID: openrtb2Request.Imp[0].ID,
-						Price: b.Price,
+						ID:     b.BidderName + "-bid",
+						ImpID:  openrtb2Request.Imp[0].ID,
+						Price:  b.Price,
+						DealID: b.DealID,
 					},
 				},
 				Seat: b.BidderName,
@@ -1092,23 +1094,7 @@ func newBidderInfo(isDisabled bool) config.BidderInfo {
 	}
 }
 
-func getTestFiles(dir string) ([]string, error) {
-	var filesToAssert []string
-
-	fileList, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	// Append the path of every file found in `dir` to the `filesToAssert` array
-	for _, fileInfo := range fileList {
-		filesToAssert = append(filesToAssert, filepath.Join(dir, fileInfo.Name()))
-	}
-
-	return filesToAssert, nil
-}
-
-func parseTestFile(fileData []byte, testFile string) (testCase, error) {
+func parseTestData(fileData []byte, testFile string) (testCase, error) {
 
 	parsedTestData := testCase{}
 	var err, errEm error
@@ -1141,9 +1127,9 @@ func parseTestFile(fileData []byte, testFile string) (testCase, error) {
 	parsedTestData.ExpectedErrorMessage, errEm = jsonparser.GetString(fileData, "expectedErrorMessage")
 
 	if err == nil && errEm == nil {
-		return parsedTestData, errors.New("Test case file can't have both a valid expectedBidResponse and a valid expectedErrorMessage, fields are mutually exclusive")
+		return parsedTestData, fmt.Errorf("Test case %s can't have both a valid expectedBidResponse and a valid expectedErrorMessage, fields are mutually exclusive", testFile)
 	} else if err != nil && errEm != nil {
-		return parsedTestData, errors.New("Test case file should come with either a valid expectedBidResponse or a valid expectedErrorMessage, not both.")
+		return parsedTestData, fmt.Errorf("Test case %s should come with either a valid expectedBidResponse or a valid expectedErrorMessage, not both.", testFile)
 	}
 
 	parsedTestData.ExpectedReturnCode = int(parsedReturnCode)
@@ -1181,7 +1167,7 @@ type exchangeTestWrapper struct {
 	actualValidatedBidReq *openrtb2.BidRequest
 }
 
-func (te *exchangeTestWrapper) HoldAuction(ctx context.Context, r exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
+func (te *exchangeTestWrapper) HoldAuction(ctx context.Context, r *exchange.AuctionRequest, debugLog *exchange.DebugLog) (*openrtb2.BidResponse, error) {
 
 	// rebuild/resync the request in the request wrapper.
 	if err := r.BidRequestWrapper.RebuildRequest(); err != nil {
@@ -1215,9 +1201,6 @@ func buildTestExchange(testCfg *testConfigValues, adapterMap map[openrtb_ext.Bid
 	gdprPermsBuilder := fakePermissionsBuilder{
 		permissions: &fakePermissions{},
 	}.Builder
-	tcf2ConfigBuilder := fakeTCF2ConfigBuilder{
-		cfg: gdpr.NewTCF2Config(config.TCF2{}, config.AccountGDPR{}),
-	}.Builder
 
 	testExchange := exchange.NewExchange(adapterMap,
 		&wellBehavedCache{},
@@ -1226,10 +1209,10 @@ func buildTestExchange(testCfg *testConfigValues, adapterMap map[openrtb_ext.Bid
 		met,
 		bidderInfos,
 		gdprPermsBuilder,
-		tcf2ConfigBuilder,
 		mockCurrencyConverter,
 		mockFetcher,
 		&adscert.NilSigner{},
+		macros.NewStringIndexBasedReplacer(),
 	)
 
 	testExchange = &exchangeTestWrapper{
@@ -1411,14 +1394,6 @@ type fakePermissionsBuilder struct {
 
 func (fpb fakePermissionsBuilder) Builder(gdpr.TCF2ConfigReader, gdpr.RequestInfo) gdpr.Permissions {
 	return fpb.permissions
-}
-
-type fakeTCF2ConfigBuilder struct {
-	cfg gdpr.TCF2ConfigReader
-}
-
-func (fcr fakeTCF2ConfigBuilder) Builder(hostConfig config.TCF2, accountConfig config.AccountGDPR) gdpr.TCF2ConfigReader {
-	return fcr.cfg
 }
 
 type fakePermissions struct {
