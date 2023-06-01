@@ -68,3 +68,5 @@ above each test function.
 
 
 PBS_GDPR_DEFAULT_VALUE=0 go run main.go --alsologtostderr
+
+export PATH=/Users/nayan/sdk/go1.19.3/bin:$PATH
