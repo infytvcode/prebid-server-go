@@ -28,27 +28,27 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 	var requests []*adapters.RequestData
 	var errors []error
 
+	headers := http.Header{}
+	headers.Add("Content-Type", "application/json;charset=utf-8")
+	headers.Add("Accept", "application/json")
+	headers.Add("x-openrtb-version", "2.5")
+
+	if request.Device != nil {
+		if len(request.Device.UA) > 0 {
+			headers.Add("User-Agent", request.Device.UA)
+		}
+
+		if len(request.Device.IPv6) > 0 {
+			headers.Add("X-Forwarded-For", request.Device.IPv6)
+		}
+
+		if len(request.Device.IP) > 0 {
+			headers.Add("X-Forwarded-For", request.Device.IP)
+		}
+	}
+
 	for _, imp := range request.Imp {
 		var endpoint string
-
-		headers := http.Header{}
-		headers.Add("Content-Type", "application/json;charset=utf-8")
-		headers.Add("Accept", "application/json")
-		headers.Add("x-openrtb-version", "2.5")
-
-		if request.Device != nil {
-			if len(request.Device.UA) > 0 {
-				headers.Add("User-Agent", request.Device.UA)
-			}
-
-			if len(request.Device.IPv6) > 0 {
-				headers.Add("X-Forwarded-For", request.Device.IPv6)
-			}
-
-			if len(request.Device.IP) > 0 {
-				headers.Add("X-Forwarded-For", request.Device.IP)
-			}
-		}
 
 		if infyExt, err := getImpressionExt(&imp); err == nil {
 			endpoint = infyExt.Base
@@ -90,76 +90,77 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
 	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
-	}
-
-	if response.StatusCode == http.StatusBadRequest {
+	} else if response.StatusCode == http.StatusBadRequest {
 		return nil, []error{&errortypes.BadInput{
 			Message: fmt.Sprintf("Unexpected status code: %d. Run with request.debug = 1 for more info", response.StatusCode),
 		}}
-	}
-
-	if response.StatusCode != http.StatusOK {
+	} else if response.StatusCode != http.StatusOK {
 		return nil, []error{&errortypes.BadServerResponse{
 			Message: fmt.Sprintf("Unexpected status code: %d. Run with request.debug = 1 for more info", response.StatusCode),
 		}}
 	}
-	var bidResp openrtb2.BidResponse
-	if infyExt, err := getImpressionExt(&internalRequest.Imp[0]); err == nil {
-		if infyExt.EndpointType == "VAST_URL" {
-			bidResp = openrtb2.BidResponse{
-				ID: internalRequest.ID,
-				SeatBid: []openrtb2.SeatBid{
-					{
-						Bid: []openrtb2.Bid{
-							//TODO: update this by parsing VAST
-							{
-								ID:    internalRequest.ID,
-								AdM:   string(response.Body),
-								Price: infyExt.Floor,
-								ImpID: internalRequest.Imp[0].ID,
-								CID:   "-",
-								CrID:  "-",
+
+	if len(internalRequest.Imp) > 0 {
+		var bidResp openrtb2.BidResponse
+		impression := &internalRequest.Imp[0]
+		if infyExt, err := getImpressionExt(impression); err == nil {
+			if infyExt.EndpointType == "VAST_URL" {
+				bidResp = openrtb2.BidResponse{
+					ID: internalRequest.ID,
+					SeatBid: []openrtb2.SeatBid{
+						{
+							Bid: []openrtb2.Bid{
+								//TODO: update this by parsing VAST
+								{
+									ID:    internalRequest.ID,
+									AdM:   string(response.Body),
+									Price: infyExt.Floor,
+									ImpID: internalRequest.Imp[0].ID,
+									CID:   "-",
+									CrID:  "-",
+								},
 							},
 						},
 					},
-				},
-			}
-		} else {
-			if err := json.Unmarshal(response.Body, &bidResp); err != nil {
-				return nil, []error{err}
-			}
-			for i, sb := range bidResp.SeatBid {
-				for j, b := range sb.Bid {
-					if b.CID == "" {
-						bidResp.SeatBid[i].Bid[j].CID = "-"
-					}
-					if b.CrID == "" {
-						bidResp.SeatBid[i].Bid[j].CrID = "-"
+				}
+			} else {
+				if err := json.Unmarshal(response.Body, &bidResp); err != nil {
+					return nil, []error{err}
+				}
+				for i, sb := range bidResp.SeatBid {
+					for j := range sb.Bid {
+						b := &bidResp.SeatBid[i].Bid[j]
+						if b.CID == "" {
+							b.CID = "-"
+						}
+						if b.CrID == "" {
+							b.CrID = "-"
+						}
 					}
 				}
 			}
 		}
-	}
+		bidsCapacity := 1
+		if len(bidResp.SeatBid) > 0 {
+			bidsCapacity = len(bidResp.SeatBid[0].Bid)
+		}
+		bidResponse := adapters.NewBidderResponseWithBidsCapacity(bidsCapacity)
 
-	bidsCapacity := 1
-	if len(bidResp.SeatBid) > 0 {
-		bidsCapacity = len(bidResp.SeatBid[0].Bid)
-	}
-	bidResponse := adapters.NewBidderResponseWithBidsCapacity(bidsCapacity)
-
-	for _, sb := range bidResp.SeatBid {
-		for i := range sb.Bid {
-			if bidType, err := getMediaTypeForBid(&sb.Bid[i]); err == nil {
-				// resolveMacros(&sb.Bid[i])
-				bidResponse.Bids = append(bidResponse.Bids, &adapters.TypedBid{
-					Bid:     &sb.Bid[i],
-					BidType: bidType,
-				})
+		for _, sb := range bidResp.SeatBid {
+			for i := range sb.Bid {
+				if bidType, err := getMediaTypeForBid(&sb.Bid[i]); err == nil {
+					// resolveMacros(&sb.Bid[i])
+					bidResponse.Bids = append(bidResponse.Bids, &adapters.TypedBid{
+						Bid:     &sb.Bid[i],
+						BidType: bidType,
+					})
+				}
 			}
 		}
-	}
 
-	return bidResponse, nil
+		return bidResponse, nil
+	}
+	return nil, nil
 }
 
 // getMediaTypeForBid determines which type of bid.
