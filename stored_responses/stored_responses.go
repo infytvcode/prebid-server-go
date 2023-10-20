@@ -9,6 +9,7 @@ import (
 	"github.com/prebid/openrtb/v19/openrtb2"
 	"github.com/prebid/prebid-server/openrtb_ext"
 	"github.com/prebid/prebid-server/stored_requests"
+	"github.com/prebid/prebid-server/util/jsonutil"
 )
 
 type ImpsWithAuctionResponseIDs map[string]string
@@ -97,8 +98,13 @@ func extractStoredResponsesIds(impInfo []ImpExtPrebidData,
 				if len(bidderResp.ID) == 0 || len(bidderResp.Bidder) == 0 {
 					return nil, nil, nil, nil, fmt.Errorf("request.imp[%d] has ext.prebid.storedbidresponse specified, but \"id\" or/and \"bidder\" fields are missing ", index)
 				}
+				bidderName := bidderResp.Bidder
+				normalizedCoreBidder, ok := openrtb_ext.NormalizeBidderName(bidderResp.Bidder)
+				if ok {
+					bidderName = normalizedCoreBidder.String()
+				}
 				//check if bidder is valid/exists
-				if _, isValid := bidderMap[bidderResp.Bidder]; !isValid {
+				if _, isValid := bidderMap[bidderName]; !isValid {
 					return nil, nil, nil, nil, fmt.Errorf("request.imp[impId: %s].ext.prebid.bidder contains unknown bidder: %s. Did you forget an alias in request.ext.prebid.aliases?", impId, bidderResp.Bidder)
 				}
 				// bidder is unique per one bid stored response
@@ -205,7 +211,7 @@ func parseImpInfo(requestJson []byte) (impData []ImpExtPrebidData, errs []error)
 			impExtData, _, _, err := jsonparser.Get(imp, "ext", "prebid")
 			var impExtPrebid openrtb_ext.ExtImpPrebid
 			if impExtData != nil {
-				if err := json.Unmarshal(impExtData, &impExtPrebid); err != nil {
+				if err := jsonutil.Unmarshal(impExtData, &impExtPrebid); err != nil {
 					errs = append(errs, err)
 				}
 			}

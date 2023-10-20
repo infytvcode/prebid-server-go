@@ -6,7 +6,7 @@ import (
 	"github.com/buger/jsonparser"
 	"github.com/prebid/openrtb/v19/openrtb2"
 	"github.com/prebid/prebid-server/config"
-	"github.com/prebid/prebid-server/hooks/hookanalytics"
+	"github.com/prebid/prebid-server/util/jsonutil"
 	jsonpatch "gopkg.in/evanphx/json-patch.v4"
 )
 
@@ -53,7 +53,7 @@ func EnrichExtBidResponse(
 		return ext, warnings, err
 	}
 
-	response, err := json.Marshal(extPrebid{Prebid: extModules{Modules: modules}})
+	response, err := jsonutil.Marshal(extPrebid{Prebid: extModules{Modules: modules}})
 	if err != nil {
 		return ext, warnings, err
 	}
@@ -84,7 +84,7 @@ func GetModulesJSON(
 		return nil, warnings, nil
 	}
 
-	data, err := json.Marshal(modulesOutcome)
+	data, err := jsonutil.Marshal(modulesOutcome)
 
 	return data, warnings, err
 }
@@ -169,7 +169,6 @@ func prepareModulesOutcome(modulesOutcome *ModulesOutcome, groups []GroupOutcome
 		for i, hookOutcome := range group.InvocationResults {
 			if !trace.isVerbose() {
 				group.InvocationResults[i].DebugMessages = nil
-				group.InvocationResults[i].AnalyticsTags = hookanalytics.Analytics{}
 			}
 
 			if isDebugEnabled {

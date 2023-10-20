@@ -8,7 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prebid/prebid-server/errortypes"
 	"github.com/prebid/prebid-server/openrtb_ext"
+	"github.com/prebid/prebid-server/util/jsonutil"
 	"github.com/prebid/prebid-server/util/ptrutil"
 )
 
@@ -31,12 +33,12 @@ func TestSetDefaults(t *testing.T) {
 			name:            "malformed request.ext",
 			givenRequest:    openrtb2.BidRequest{Ext: json.RawMessage(`malformed`)},
 			expectedRequest: openrtb2.BidRequest{Ext: json.RawMessage(`malformed`)},
-			expectedErr:     "invalid character 'm' looking for beginning of value",
+			expectedErr:     "expect { or n, but found m",
 		},
 		{
 			name:            "targeting", // tests integration with setDefaultsTargeting
 			givenRequest:    openrtb2.BidRequest{Ext: json.RawMessage(`{"prebid":{"targeting":{}}}`)},
-			expectedRequest: openrtb2.BidRequest{Ext: json.RawMessage(`{"prebid":{"targeting":{"pricegranularity":{"precision":2,"ranges":[{"min":0,"max":20,"increment":0.1}]},"includewinners":true,"includebidderkeys":true}}}`)},
+			expectedRequest: openrtb2.BidRequest{Ext: json.RawMessage(`{"prebid":{"targeting":{"pricegranularity":{"precision":2,"ranges":[{"min":0,"max":20,"increment":0.1}]},"mediatypepricegranularity":{},"includewinners":true,"includebidderkeys":true}}}`)},
 		},
 		{
 			name:            "imp", // tests integration with setDefaultsImp
@@ -55,6 +57,7 @@ func TestSetDefaults(t *testing.T) {
 			// assert error
 			if len(test.expectedErr) > 0 {
 				assert.EqualError(t, err, test.expectedErr, "Error")
+				assert.IsType(t, &errortypes.FailedToUnmarshal{}, err)
 			}
 
 			// rebuild request
@@ -66,10 +69,10 @@ func TestSetDefaults(t *testing.T) {
 				assert.Equal(t, &test.expectedRequest, wrapper.BidRequest, "Request")
 			} else {
 				// assert request as json to ignore order in ext fields
-				expectedRequestJSON, err := json.Marshal(test.expectedRequest)
+				expectedRequestJSON, err := jsonutil.Marshal(test.expectedRequest)
 				require.NoError(t, err, "Marshal Expected Request")
 
-				actualRequestJSON, err := json.Marshal(wrapper.BidRequest)
+				actualRequestJSON, err := jsonutil.Marshal(wrapper.BidRequest)
 				require.NoError(t, err, "Marshal Actual Request")
 
 				assert.JSONEq(t, string(expectedRequestJSON), string(actualRequestJSON), "Request")
@@ -153,6 +156,40 @@ func TestSetDefaultsTargeting(t *testing.T) {
 			expectedModified: true,
 		},
 		{
+			name: "populated-ranges-nil-mediatypepricegranularity-video-banner-native",
+			givenTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &openrtb_ext.PriceGranularity{
+					Precision: ptrutil.ToPtr(4),
+					Ranges:    nil,
+				},
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    nil,
+					},
+					Banner: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    nil,
+					},
+					Native: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    nil,
+					},
+				},
+			},
+			expectedTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &defaultGranularity,
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video:  &defaultGranularity,
+					Banner: &defaultGranularity,
+					Native: &defaultGranularity,
+				},
+				IncludeWinners:    ptrutil.ToPtr(DefaultTargetingIncludeWinners),
+				IncludeBidderKeys: ptrutil.ToPtr(DefaultTargetingIncludeBidderKeys),
+			},
+			expectedModified: true,
+		},
+		{
 			name: "populated-ranges-empty",
 			givenTargeting: &openrtb_ext.ExtRequestTargeting{
 				PriceGranularity: &openrtb_ext.PriceGranularity{
@@ -162,6 +199,40 @@ func TestSetDefaultsTargeting(t *testing.T) {
 			},
 			expectedTargeting: &openrtb_ext.ExtRequestTargeting{
 				PriceGranularity:  &defaultGranularity,
+				IncludeWinners:    ptrutil.ToPtr(DefaultTargetingIncludeWinners),
+				IncludeBidderKeys: ptrutil.ToPtr(DefaultTargetingIncludeBidderKeys),
+			},
+			expectedModified: true,
+		},
+		{
+			name: "populated-ranges-empty-mediatypepricegranularity-video-banner-native",
+			givenTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &openrtb_ext.PriceGranularity{
+					Precision: ptrutil.ToPtr(4),
+					Ranges:    []openrtb_ext.GranularityRange{},
+				},
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{},
+					},
+					Banner: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{},
+					},
+					Native: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{},
+					},
+				},
+			},
+			expectedTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &defaultGranularity,
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video:  &defaultGranularity,
+					Banner: &defaultGranularity,
+					Native: &defaultGranularity,
+				},
 				IncludeWinners:    ptrutil.ToPtr(DefaultTargetingIncludeWinners),
 				IncludeBidderKeys: ptrutil.ToPtr(DefaultTargetingIncludeBidderKeys),
 			},
@@ -181,6 +252,51 @@ func TestSetDefaultsTargeting(t *testing.T) {
 				PriceGranularity: &openrtb_ext.PriceGranularity{
 					Precision: ptrutil.ToPtr(4),
 					Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+				},
+				IncludeWinners:    ptrutil.ToPtr(false),
+				IncludeBidderKeys: ptrutil.ToPtr(false),
+			},
+			expectedModified: false,
+		},
+		{
+			name: "populated-full-mediatypepricegranularity-video-banner", // no defaults set
+			givenTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &openrtb_ext.PriceGranularity{
+					Precision: ptrutil.ToPtr(4),
+					Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+				},
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+					},
+					Banner: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+					},
+					Native: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+					},
+				},
+				IncludeWinners:    ptrutil.ToPtr(false),
+				IncludeBidderKeys: ptrutil.ToPtr(false),
+			},
+			expectedTargeting: &openrtb_ext.ExtRequestTargeting{
+				PriceGranularity: &openrtb_ext.PriceGranularity{
+					Precision: ptrutil.ToPtr(4),
+					Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}},
+				},
+				MediaTypePriceGranularity: openrtb_ext.MediaTypePriceGranularity{
+					Video: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}}},
+					Banner: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}}},
+					Native: &openrtb_ext.PriceGranularity{
+						Precision: ptrutil.ToPtr(4),
+						Ranges:    []openrtb_ext.GranularityRange{{Min: 0, Max: 10, Increment: 1}}},
 				},
 				IncludeWinners:    ptrutil.ToPtr(false),
 				IncludeBidderKeys: ptrutil.ToPtr(false),
@@ -277,9 +393,9 @@ func TestSetDefaultsPriceGranularity(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			actualModified := setDefaultsPriceGranularity(test.givenGranularity)
+			pg, actualModified := setDefaultsPriceGranularity(test.givenGranularity)
 			assert.Equal(t, test.expectedModified, actualModified)
-			assert.Equal(t, test.expectedGranularity, test.givenGranularity)
+			assert.Equal(t, test.expectedGranularity, pg)
 		})
 	}
 }

@@ -20,6 +20,11 @@ type SovrnAdapter struct {
 	URI string
 }
 
+type sovrnImpExt struct {
+	Bidder     openrtb_ext.ExtImpSovrn `json:"bidder"`
+	AdUnitCode string                  `json:"adunitcode,omitempty"`
+}
+
 func (s *SovrnAdapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.ExtraRequestInfo) ([]*adapters.RequestData, []error) {
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json")
@@ -74,11 +79,24 @@ func (s *SovrnAdapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapt
 			imp.BidFloor = sovrnExt.BidFloor
 		}
 
+		var impExtBuffer []byte
+		impExtBuffer, err = json.Marshal(&sovrnImpExt{
+			Bidder:     sovrnExt,
+			AdUnitCode: sovrnExt.AdUnitCode,
+		})
+		if err != nil {
+			errs = append(errs, &errortypes.BadInput{
+				Message: err.Error(),
+			})
+			continue
+		}
+
+		imp.Ext = impExtBuffer
+
 		// Validate video params if appropriate
 		video := imp.Video
 		if video != nil {
 			if video.MIMEs == nil ||
-				video.MinDuration == 0 ||
 				video.MaxDuration == 0 ||
 				video.Protocols == nil {
 				errs = append(errs, &errortypes.BadInput{
