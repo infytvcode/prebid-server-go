@@ -113,6 +113,7 @@ var coreBidderNames []BidderName = []BidderName{
 	BidderImpactify,
 	BidderImprovedigital,
 	BidderInfyTV,
+	BidderInfyTVHb,
 	BidderInMobi,
 	BidderInteractiveoffers,
 	BidderInvibes,
