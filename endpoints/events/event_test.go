@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prebid/prebid-server/analytics"
-	"github.com/prebid/prebid-server/config"
-	"github.com/prebid/prebid-server/errortypes"
-	"github.com/prebid/prebid-server/metrics"
-	"github.com/prebid/prebid-server/privacy"
-	"github.com/prebid/prebid-server/stored_requests"
+	"github.com/prebid/prebid-server/v3/analytics"
+	"github.com/prebid/prebid-server/v3/config"
+	"github.com/prebid/prebid-server/v3/errortypes"
+	"github.com/prebid/prebid-server/v3/metrics"
+	"github.com/prebid/prebid-server/v3/privacy"
+	"github.com/prebid/prebid-server/v3/stored_requests"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -63,6 +63,8 @@ func (e *eventsMockAnalyticsModule) LogNotificationEventObject(ne *analytics.Not
 	}
 	e.Invoked = true
 }
+
+func (e *eventsMockAnalyticsModule) Shutdown() {}
 
 var mockAccountData = map[string]json.RawMessage{
 	"events_enabled":  json.RawMessage(`{"events": {"enabled":true}}`),

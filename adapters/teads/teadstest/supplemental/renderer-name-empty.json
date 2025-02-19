@@ -44,7 +44,7 @@
   "httpCalls": [
     {
       "expectedRequest": {
-        "uri": "https://a.teads.tv/prebid-server/bid-request",
+        "uri": "https://psrv.teads.tv/prebid-server/bid-request",
         "body": {
           "id": "test-request-id",
           "imp": [
@@ -87,7 +87,8 @@
               }
             }
           }
-        }
+        },
+        "impIDs":["b6321d41-3840-4cb3-baad-b6fc5b0c8553"]
       },
       "mockResponse": {
         "status": 200,

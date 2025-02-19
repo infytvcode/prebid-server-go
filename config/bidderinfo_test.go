@@ -7,7 +7,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/prebid/prebid-server/openrtb_ext"
+	"github.com/prebid/prebid-server/v3/openrtb_ext"
+	"github.com/prebid/prebid-server/v3/util/ptrutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,6 +402,15 @@ func TestProcessAliasBidderInfo(t *testing.T) {
 		Key: "bidderA",
 	}
 
+	parentWithSyncerSupports := parentWithoutSyncerKey
+	parentWithSyncerSupports.Syncer = &Syncer{
+		Supports: []string{"iframe"},
+	}
+
+	aliasWithoutSyncer := parentWithoutSyncerKey
+	aliasWithoutSyncer.AliasOf = "bidderA"
+	aliasWithoutSyncer.Syncer = nil
+
 	testCases := []struct {
 		description         string
 		aliasInfos          map[string]aliasNillableFields
@@ -427,6 +437,26 @@ func TestProcessAliasBidderInfo(t *testing.T) {
 			},
 			expectedErr:         nil,
 			expectedBidderInfos: BidderInfos{"bidderA": parentWithSyncerKey, "bidderB": bidderB},
+		},
+		{
+			description: "inherit all parent info in alias bidder, except for syncer is parent only defines supports",
+			aliasInfos: map[string]aliasNillableFields{
+				"bidderB": {
+					Disabled:                nil,
+					ModifyingVastXmlAllowed: nil,
+					Experiment:              nil,
+					XAPI:                    nil,
+				},
+			},
+			bidderInfos: BidderInfos{
+				"bidderA": parentWithSyncerSupports,
+				"bidderB": BidderInfo{
+					AliasOf: "bidderA",
+					// all other fields should be inherited from parent bidder, except for syncer
+				},
+			},
+			expectedErr:         nil,
+			expectedBidderInfos: BidderInfos{"bidderA": parentWithSyncerSupports, "bidderB": aliasWithoutSyncer},
 		},
 		{
 			description: "inherit all parent info in alias bidder, use parent name as syncer alias key",
@@ -593,6 +623,7 @@ func TestBidderInfoValidationPositive(t *testing.T) {
 					URL:       "http://bidderB.com/usersync",
 					UserMacro: "UID",
 				},
+				FormatOverride: SyncResponseFormatRedirect,
 			},
 		},
 		"bidderC": BidderInfo{
@@ -626,6 +657,9 @@ func TestBidderInfoValidationPositive(t *testing.T) {
 						openrtb_ext.BidTypeBanner,
 					},
 				},
+			},
+			Syncer: &Syncer{
+				FormatOverride: SyncResponseFormatIFrame,
 			},
 		},
 	}
@@ -1318,6 +1352,37 @@ func TestBidderInfoValidationNegative(t *testing.T) {
 				errors.New("parent bidder: bidderC not found for an alias: bidderB"),
 			},
 		},
+		{
+			"Invalid format override value",
+			BidderInfos{
+				"bidderB": BidderInfo{
+					Endpoint: "http://bidderA.com/openrtb2",
+					Maintainer: &MaintainerInfo{
+						Email: "maintainer@bidderA.com",
+					},
+					Capabilities: &CapabilitiesInfo{
+						App: &PlatformInfo{
+							MediaTypes: []openrtb_ext.BidType{
+								openrtb_ext.BidTypeBanner,
+								openrtb_ext.BidTypeNative,
+							},
+						},
+						Site: &PlatformInfo{
+							MediaTypes: []openrtb_ext.BidType{
+								openrtb_ext.BidTypeBanner,
+								openrtb_ext.BidTypeNative,
+							},
+						},
+					},
+					Syncer: &Syncer{
+						FormatOverride: "x",
+					},
+				},
+			},
+			[]error{
+				errors.New("syncer could not be created, invalid format override value: x"),
+			},
+		},
 	}
 
 	for _, test := range testCases {
@@ -1487,11 +1552,86 @@ func TestSyncerEndpointOverride(t *testing.T) {
 	}
 }
 
+func TestSyncerDefined(t *testing.T) {
+	testCases := []struct {
+		name        string
+		givenSyncer *Syncer
+		expected    bool
+	}{
+		{
+			name:        "nil",
+			givenSyncer: nil,
+			expected:    false,
+		},
+		{
+			name:        "empty",
+			givenSyncer: &Syncer{},
+			expected:    false,
+		},
+		{
+			name:        "key-only",
+			givenSyncer: &Syncer{Key: "anyKey"},
+			expected:    true,
+		},
+		{
+			name:        "iframe-only",
+			givenSyncer: &Syncer{IFrame: &SyncerEndpoint{}},
+			expected:    true,
+		},
+		{
+			name:        "redirect-only",
+			givenSyncer: &Syncer{Redirect: &SyncerEndpoint{}},
+			expected:    true,
+		},
+		{
+			name:        "externalurl-only",
+			givenSyncer: &Syncer{ExternalURL: "anyURL"},
+			expected:    true,
+		},
+		{
+			name:        "supportscors-only",
+			givenSyncer: &Syncer{SupportCORS: ptrutil.ToPtr(false)},
+			expected:    true,
+		},
+		{
+			name:        "formatoverride-only",
+			givenSyncer: &Syncer{FormatOverride: "anyFormat"},
+			expected:    true,
+		},
+		{
+			name:        "skipwhen-only",
+			givenSyncer: &Syncer{SkipWhen: &SkipWhen{}},
+			expected:    true,
+		},
+		{
+			name:        "supports-only",
+			givenSyncer: &Syncer{Supports: []string{"anySupports"}},
+			expected:    false,
+		},
+		{
+			name:        "supports-with-other",
+			givenSyncer: &Syncer{Key: "anyKey", Supports: []string{"anySupports"}},
+			expected:    true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			result := test.givenSyncer.Defined()
+			assert.Equal(t, test.expected, result)
+		})
+	}
+}
+
 func TestApplyBidderInfoConfigSyncerOverrides(t *testing.T) {
 	var (
 		givenFileSystem = BidderInfos{"a": {Syncer: &Syncer{Key: "original"}}}
-		givenConfig     = BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}}
-		expected        = BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}}
+		givenConfig     = nillableFieldBidderInfos{
+			"a": {
+				bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}},
+			},
+		}
+		expected = BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}}
 	)
 
 	result, resultErr := applyBidderInfoConfigOverrides(givenConfig, givenFileSystem, mockNormalizeBidderName)
@@ -1500,47 +1640,49 @@ func TestApplyBidderInfoConfigSyncerOverrides(t *testing.T) {
 }
 
 func TestApplyBidderInfoConfigOverrides(t *testing.T) {
+	falseValue := false
+
 	var testCases = []struct {
 		description            string
 		givenFsBidderInfos     BidderInfos
-		givenConfigBidderInfos BidderInfos
+		givenConfigBidderInfos nillableFieldBidderInfos
 		expectedError          string
 		expectedBidderInfos    BidderInfos
 	}{
 		{
 			description:            "Don't override endpoint",
 			givenFsBidderInfos:     BidderInfos{"a": {Endpoint: "original"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Endpoint: "original", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override endpoint",
 			givenFsBidderInfos:     BidderInfos{"a": {Endpoint: "original"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Endpoint: "override", Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Endpoint: "override", Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Endpoint: "override", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Don't override ExtraAdapterInfo",
 			givenFsBidderInfos:     BidderInfos{"a": {ExtraAdapterInfo: "original"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {ExtraAdapterInfo: "original", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override ExtraAdapterInfo",
 			givenFsBidderInfos:     BidderInfos{"a": {ExtraAdapterInfo: "original"}},
-			givenConfigBidderInfos: BidderInfos{"a": {ExtraAdapterInfo: "override", Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{ExtraAdapterInfo: "override", Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {ExtraAdapterInfo: "override", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Don't override Maintainer",
 			givenFsBidderInfos:     BidderInfos{"a": {Maintainer: &MaintainerInfo{Email: "original"}}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Maintainer: &MaintainerInfo{Email: "original"}, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override maintainer",
 			givenFsBidderInfos:     BidderInfos{"a": {Maintainer: &MaintainerInfo{Email: "original"}}},
-			givenConfigBidderInfos: BidderInfos{"a": {Maintainer: &MaintainerInfo{Email: "override"}, Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Maintainer: &MaintainerInfo{Email: "override"}, Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Maintainer: &MaintainerInfo{Email: "override"}, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
@@ -1548,7 +1690,7 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 			givenFsBidderInfos: BidderInfos{"a": {
 				Capabilities: &CapabilitiesInfo{App: &PlatformInfo{MediaTypes: []openrtb_ext.BidType{openrtb_ext.BidTypeVideo}}},
 			}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos: BidderInfos{"a": {
 				Syncer:       &Syncer{Key: "override"},
 				Capabilities: &CapabilitiesInfo{App: &PlatformInfo{MediaTypes: []openrtb_ext.BidType{openrtb_ext.BidTypeVideo}}},
@@ -1559,10 +1701,10 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 			givenFsBidderInfos: BidderInfos{"a": {
 				Capabilities: &CapabilitiesInfo{App: &PlatformInfo{MediaTypes: []openrtb_ext.BidType{openrtb_ext.BidTypeVideo}}},
 			}},
-			givenConfigBidderInfos: BidderInfos{"a": {
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{
 				Syncer:       &Syncer{Key: "override"},
 				Capabilities: &CapabilitiesInfo{App: &PlatformInfo{MediaTypes: []openrtb_ext.BidType{openrtb_ext.BidTypeBanner}}},
-			}},
+			}}},
 			expectedBidderInfos: BidderInfos{"a": {
 				Syncer:       &Syncer{Key: "override"},
 				Capabilities: &CapabilitiesInfo{App: &PlatformInfo{MediaTypes: []openrtb_ext.BidType{openrtb_ext.BidTypeBanner}}},
@@ -1571,25 +1713,25 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 		{
 			description:            "Don't override Debug",
 			givenFsBidderInfos:     BidderInfos{"a": {Debug: &DebugInfo{Allow: true}}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Debug: &DebugInfo{Allow: true}, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override Debug",
 			givenFsBidderInfos:     BidderInfos{"a": {Debug: &DebugInfo{Allow: true}}},
-			givenConfigBidderInfos: BidderInfos{"a": {Debug: &DebugInfo{Allow: false}, Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Debug: &DebugInfo{Allow: false}, Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {Debug: &DebugInfo{Allow: false}, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Don't override GVLVendorID",
 			givenFsBidderInfos:     BidderInfos{"a": {GVLVendorID: 5}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {GVLVendorID: 5, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override GVLVendorID",
 			givenFsBidderInfos:     BidderInfos{"a": {}},
-			givenConfigBidderInfos: BidderInfos{"a": {GVLVendorID: 5, Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{GVLVendorID: 5, Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {GVLVendorID: 5, Syncer: &Syncer{Key: "override"}}},
 		},
 		{
@@ -1597,7 +1739,7 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 			givenFsBidderInfos: BidderInfos{"a": {
 				XAPI: AdapterXAPI{Username: "username1", Password: "password2", Tracker: "tracker3"},
 			}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos: BidderInfos{"a": {
 				XAPI:   AdapterXAPI{Username: "username1", Password: "password2", Tracker: "tracker3"},
 				Syncer: &Syncer{Key: "override"}}},
@@ -1606,9 +1748,9 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 			description: "Override XAPI",
 			givenFsBidderInfos: BidderInfos{"a": {
 				XAPI: AdapterXAPI{Username: "username", Password: "password", Tracker: "tracker"}}},
-			givenConfigBidderInfos: BidderInfos{"a": {
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{
 				XAPI:   AdapterXAPI{Username: "username1", Password: "password2", Tracker: "tracker3"},
-				Syncer: &Syncer{Key: "override"}}},
+				Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos: BidderInfos{"a": {
 				XAPI:   AdapterXAPI{Username: "username1", Password: "password2", Tracker: "tracker3"},
 				Syncer: &Syncer{Key: "override"}}},
@@ -1616,38 +1758,92 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 		{
 			description:            "Don't override PlatformID",
 			givenFsBidderInfos:     BidderInfos{"a": {PlatformID: "PlatformID"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {PlatformID: "PlatformID", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override PlatformID",
 			givenFsBidderInfos:     BidderInfos{"a": {PlatformID: "PlatformID1"}},
-			givenConfigBidderInfos: BidderInfos{"a": {PlatformID: "PlatformID2", Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{PlatformID: "PlatformID2", Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {PlatformID: "PlatformID2", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Don't override AppSecret",
 			givenFsBidderInfos:     BidderInfos{"a": {AppSecret: "AppSecret"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {AppSecret: "AppSecret", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override AppSecret",
 			givenFsBidderInfos:     BidderInfos{"a": {AppSecret: "AppSecret1"}},
-			givenConfigBidderInfos: BidderInfos{"a": {AppSecret: "AppSecret2", Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{AppSecret: "AppSecret2", Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {AppSecret: "AppSecret2", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Don't override EndpointCompression",
 			givenFsBidderInfos:     BidderInfos{"a": {EndpointCompression: "GZIP"}},
-			givenConfigBidderInfos: BidderInfos{"a": {Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {EndpointCompression: "GZIP", Syncer: &Syncer{Key: "override"}}},
 		},
 		{
 			description:            "Override EndpointCompression",
 			givenFsBidderInfos:     BidderInfos{"a": {EndpointCompression: "GZIP"}},
-			givenConfigBidderInfos: BidderInfos{"a": {EndpointCompression: "LZ77", Syncer: &Syncer{Key: "override"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{EndpointCompression: "LZ77", Syncer: &Syncer{Key: "override"}}}},
 			expectedBidderInfos:    BidderInfos{"a": {EndpointCompression: "LZ77", Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Don't override Disabled",
+			givenFsBidderInfos:     BidderInfos{"a": {Disabled: true}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Disabled: false, Syncer: &Syncer{Key: "override"}}, nillableFields: bidderInfoNillableFields{Disabled: nil}}},
+			expectedBidderInfos:    BidderInfos{"a": {Disabled: true, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Override Disabled",
+			givenFsBidderInfos:     BidderInfos{"a": {Disabled: true}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Disabled: false, Syncer: &Syncer{Key: "override"}}, nillableFields: bidderInfoNillableFields{Disabled: &falseValue}}},
+			expectedBidderInfos:    BidderInfos{"a": {Disabled: false, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Don't override ModifyingVastXmlAllowed",
+			givenFsBidderInfos:     BidderInfos{"a": {ModifyingVastXmlAllowed: true}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{ModifyingVastXmlAllowed: false, Syncer: &Syncer{Key: "override"}}, nillableFields: bidderInfoNillableFields{ModifyingVastXmlAllowed: nil}}},
+			expectedBidderInfos:    BidderInfos{"a": {ModifyingVastXmlAllowed: true, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Override ModifyingVastXmlAllowed",
+			givenFsBidderInfos:     BidderInfos{"a": {ModifyingVastXmlAllowed: true}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{ModifyingVastXmlAllowed: false, Syncer: &Syncer{Key: "override"}}, nillableFields: bidderInfoNillableFields{ModifyingVastXmlAllowed: &falseValue}}},
+			expectedBidderInfos:    BidderInfos{"a": {ModifyingVastXmlAllowed: false, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Don't override OpenRTB",
+			givenFsBidderInfos:     BidderInfos{"a": {OpenRTB: &OpenRTBInfo{Version: "1"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}}}},
+			expectedBidderInfos:    BidderInfos{"a": {OpenRTB: &OpenRTBInfo{Version: "1"}, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Override OpenRTB",
+			givenFsBidderInfos:     BidderInfos{"a": {OpenRTB: &OpenRTBInfo{Version: "1"}}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{OpenRTB: &OpenRTBInfo{Version: "2"}, Syncer: &Syncer{Key: "override"}}}},
+			expectedBidderInfos:    BidderInfos{"a": {OpenRTB: &OpenRTBInfo{Version: "2"}, Syncer: &Syncer{Key: "override"}}},
+		},
+		{
+			description:            "Don't override AliasOf",
+			givenFsBidderInfos:     BidderInfos{"a": {AliasOf: "Alias1"}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{}}},
+			expectedBidderInfos:    BidderInfos{"a": {AliasOf: "Alias1"}},
+		},
+		{
+			description:            "Attempt override AliasOf but ignored",
+			givenFsBidderInfos:     BidderInfos{"a": {AliasOf: "Alias1"}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{AliasOf: "Alias2"}}},
+			expectedBidderInfos:    BidderInfos{"a": {AliasOf: "Alias1"}},
+		},
+		{
+			description:            "Two bidder infos: One with overrides and one without",
+			givenFsBidderInfos:     BidderInfos{"a": {Endpoint: "original"}, "b": {Endpoint: "b endpoint"}},
+			givenConfigBidderInfos: nillableFieldBidderInfos{"a": {bidderInfo: BidderInfo{Endpoint: "override", Syncer: &Syncer{Key: "override"}}}},
+			expectedBidderInfos:    BidderInfos{"a": {Endpoint: "override", Syncer: &Syncer{Key: "override"}}, "b": {Endpoint: "b endpoint"}},
 		},
 	}
 	for _, test := range testCases {
@@ -1659,26 +1855,31 @@ func TestApplyBidderInfoConfigOverrides(t *testing.T) {
 
 func TestApplyBidderInfoConfigOverridesInvalid(t *testing.T) {
 	var testCases = []struct {
-		description            string
-		givenFsBidderInfos     BidderInfos
-		givenConfigBidderInfos BidderInfos
-		expectedError          string
-		expectedBidderInfos    BidderInfos
+		description                   string
+		givenFsBidderInfos            BidderInfos
+		givenNillableFieldBidderInfos nillableFieldBidderInfos
+		expectedError                 string
+		expectedBidderInfos           BidderInfos
 	}{
 		{
-			description:            "Bidder doesn't exists in bidder list",
-			givenConfigBidderInfos: BidderInfos{"unknown": {Syncer: &Syncer{Key: "override"}}},
-			expectedError:          "error setting configuration for bidder unknown: unknown bidder",
+			description: "Bidder doesn't exists in bidder list",
+			givenNillableFieldBidderInfos: nillableFieldBidderInfos{"unknown": nillableFieldBidderInfo{
+				bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}},
+			}},
+			expectedError: "error setting configuration for bidder unknown: unknown bidder",
 		},
 		{
-			description:            "Bidder doesn't exists in file system",
-			givenFsBidderInfos:     BidderInfos{"unknown": {Endpoint: "original"}},
-			givenConfigBidderInfos: BidderInfos{"bidderA": {Syncer: &Syncer{Key: "override"}}},
-			expectedError:          "error finding configuration for bidder bidderA: unknown bidder",
+			description:        "Bidder doesn't exists in file system",
+			givenFsBidderInfos: BidderInfos{"unknown": {Endpoint: "original"}},
+			givenNillableFieldBidderInfos: nillableFieldBidderInfos{"bidderA": nillableFieldBidderInfo{
+				bidderInfo: BidderInfo{Syncer: &Syncer{Key: "override"}},
+			}},
+			expectedError: "error finding configuration for bidder bidderA: unknown bidder",
 		},
 	}
 	for _, test := range testCases {
-		_, err := applyBidderInfoConfigOverrides(test.givenConfigBidderInfos, test.givenFsBidderInfos, mockNormalizeBidderName)
+
+		_, err := applyBidderInfoConfigOverrides(test.givenNillableFieldBidderInfos, test.givenFsBidderInfos, mockNormalizeBidderName)
 		assert.ErrorContains(t, err, test.expectedError, test.description+":err")
 	}
 }
@@ -1690,7 +1891,19 @@ func TestReadFullYamlBidderConfig(t *testing.T) {
 	err := yaml.Unmarshal([]byte(fullBidderYAMLConfig), &bidderInf)
 	require.NoError(t, err)
 
-	actualBidderInfo, err := applyBidderInfoConfigOverrides(BidderInfos{bidder: bidderInf}, BidderInfos{bidder: {Syncer: &Syncer{Supports: []string{"iframe"}}}}, mockNormalizeBidderName)
+	bidderInfoOverrides := nillableFieldBidderInfos{
+		bidder: nillableFieldBidderInfo{
+			bidderInfo: bidderInf,
+			nillableFields: bidderInfoNillableFields{
+				Disabled:                &bidderInf.Disabled,
+				ModifyingVastXmlAllowed: &bidderInf.ModifyingVastXmlAllowed,
+			},
+		},
+	}
+	bidderInfoBase := BidderInfos{
+		bidder: {Syncer: &Syncer{Supports: []string{"iframe"}}},
+	}
+	actualBidderInfo, err := applyBidderInfoConfigOverrides(bidderInfoOverrides, bidderInfoBase, mockNormalizeBidderName)
 	require.NoError(t, err)
 
 	expectedBidderInfo := BidderInfos{

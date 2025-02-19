@@ -10,17 +10,18 @@ import (
 	"testing"
 	"time"
 
-	analyticsBuild "github.com/prebid/prebid-server/analytics/build"
-	"github.com/prebid/prebid-server/config"
-	"github.com/prebid/prebid-server/currency"
-	"github.com/prebid/prebid-server/exchange"
-	"github.com/prebid/prebid-server/experiment/adscert"
-	"github.com/prebid/prebid-server/hooks"
-	"github.com/prebid/prebid-server/macros"
-	metricsConfig "github.com/prebid/prebid-server/metrics/config"
-	"github.com/prebid/prebid-server/openrtb_ext"
-	"github.com/prebid/prebid-server/stored_requests/backends/empty_fetcher"
-	"github.com/prebid/prebid-server/usersync"
+	analyticsBuild "github.com/prebid/prebid-server/v3/analytics/build"
+	"github.com/prebid/prebid-server/v3/config"
+	"github.com/prebid/prebid-server/v3/currency"
+	"github.com/prebid/prebid-server/v3/exchange"
+	"github.com/prebid/prebid-server/v3/experiment/adscert"
+	"github.com/prebid/prebid-server/v3/hooks"
+	"github.com/prebid/prebid-server/v3/macros"
+	metricsConfig "github.com/prebid/prebid-server/v3/metrics/config"
+	"github.com/prebid/prebid-server/v3/openrtb_ext"
+	"github.com/prebid/prebid-server/v3/ortb"
+	"github.com/prebid/prebid-server/v3/stored_requests/backends/empty_fetcher"
+	"github.com/prebid/prebid-server/v3/usersync"
 )
 
 // benchmarkTestServer returns the header bidding test ad. This response was scraped from a real appnexus server response.
@@ -71,6 +72,7 @@ func BenchmarkOpenrtbEndpoint(b *testing.B) {
 	if err != nil {
 		return
 	}
+	requestValidator := ortb.NewRequestValidator(nil, map[string]string{}, paramValidator)
 
 	nilMetrics := &metricsConfig.NilMetricsEngine{}
 
@@ -87,6 +89,7 @@ func BenchmarkOpenrtbEndpoint(b *testing.B) {
 		adapters,
 		nil,
 		&config.Configuration{},
+		requestValidator,
 		map[string]usersync.Syncer{},
 		nilMetrics,
 		infos,
@@ -95,12 +98,13 @@ func BenchmarkOpenrtbEndpoint(b *testing.B) {
 		empty_fetcher.EmptyFetcher{},
 		&adscert.NilSigner{},
 		macros.NewStringIndexBasedReplacer(),
+		nil,
 	)
 
 	endpoint, _ := NewEndpoint(
 		fakeUUIDGenerator{},
 		exchange,
-		paramValidator,
+		requestValidator,
 		empty_fetcher.EmptyFetcher{},
 		empty_fetcher.EmptyFetcher{},
 		&config.Configuration{MaxRequestSize: maxSize},
@@ -148,8 +152,8 @@ func BenchmarkValidWholeExemplary(b *testing.B) {
 
 			cfg := &config.Configuration{
 				MaxRequestSize:    maxSize,
-				BlacklistedApps:   test.Config.BlacklistedApps,
-				BlacklistedAppMap: test.Config.getBlacklistedAppMap(),
+				BlockedApps:       test.Config.BlockedApps,
+				BlockedAppsLookup: test.Config.getBlockedAppLookup(),
 				AccountRequired:   test.Config.AccountRequired,
 			}
 
