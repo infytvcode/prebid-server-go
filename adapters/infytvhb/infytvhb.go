@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/prebid/openrtb/v19/openrtb2"
-	"github.com/prebid/prebid-server/adapters"
-	"github.com/prebid/prebid-server/config"
-	"github.com/prebid/prebid-server/errortypes"
-	"github.com/prebid/prebid-server/openrtb_ext"
+	"github.com/prebid/openrtb/v20/openrtb2"
+	"github.com/prebid/prebid-server/v3/adapters"
+	"github.com/prebid/prebid-server/v3/config"
+	"github.com/prebid/prebid-server/v3/errortypes"
+	"github.com/prebid/prebid-server/v3/openrtb_ext"
 )
 
 type adapter struct {
@@ -84,10 +84,14 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 		}
 
 	}
+	fmt.Printf("request: %v\n", requests)
+	fmt.Printf("errors: %v\n", errors)
 	return requests, errors
 }
 
 func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
+	fmt.Printf("response: %v\n", response)
+	fmt.Printf("response.Body: %v\n", string(response.Body))
 	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	} else if response.StatusCode == http.StatusBadRequest {
@@ -100,10 +104,14 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 		}}
 	}
 
+	fmt.Printf("internalRequest.Imp: %v\n", internalRequest.Imp)
+
 	if len(internalRequest.Imp) > 0 {
 		var bidResp openrtb2.BidResponse
 		impression := &internalRequest.Imp[0]
 		if infyExt, err := getImpressionExt(impression); err == nil {
+			fmt.Printf("infyExt.EndpointID: %v\n", infyExt.EndpointID)
+			fmt.Printf("infyExt.EndpointType: %v\n", infyExt.EndpointType)
 			if infyExt.EndpointType == "VAST_URL" {
 				bidResp = openrtb2.BidResponse{
 					ID: internalRequest.ID,
@@ -125,6 +133,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			} else {
 				if err := json.Unmarshal(response.Body, &bidResp); err != nil {
+					fmt.Printf("err: %v\n", err)
 					return nil, []error{err}
 				}
 				for i, sb := range bidResp.SeatBid {
@@ -140,6 +149,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			}
 		}
+		fmt.Printf("impression: %v\n", impression)
 		bidsCapacity := 1
 		if len(bidResp.SeatBid) > 0 {
 			bidsCapacity = len(bidResp.SeatBid[0].Bid)
@@ -157,6 +167,7 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			}
 		}
+		fmt.Printf("bidResponse: %v\n", bidResponse)
 
 		return bidResponse, nil
 	}
@@ -181,6 +192,7 @@ func getMediaTypeForBid(bid *openrtb2.Bid) (openrtb_ext.BidType, error) {
 // getImpressionExt parses and return first imp ext or nil
 func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvHb, error) {
 	var bidderExt adapters.ExtImpBidder
+	fmt.Printf("imp.Ext: %v\n", imp.Ext)
 	if err := json.Unmarshal(imp.Ext, &bidderExt); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
