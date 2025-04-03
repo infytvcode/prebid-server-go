@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strings"
 
+	"github.com/buger/jsonparser"
 	"github.com/prebid/openrtb/v20/openrtb2"
 	"github.com/prebid/prebid-server/v3/adapters"
 	"github.com/prebid/prebid-server/v3/config"
@@ -62,6 +65,8 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 			reqCopy.Imp = append(reqCopy.Imp, imp)
 			reqCopy.Ext = nil
 			requestJSON, err := json.Marshal(reqCopy)
+			dynamicConfigMerge(infyExt.DspConfigs, &requestJSON, &endpoint)
+			// dynamic config map
 			if err != nil {
 				errors = append(errors, err)
 				continue
@@ -206,4 +211,75 @@ func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvHb, error) {
 		}
 	}
 	return &extImpInfyTV, nil
+}
+
+func dynamicConfigMerge(dcs []openrtb_ext.DspConfig, request *[]byte, endpoint *string) {
+	for _, dc := range dcs {
+		switch dc.ConditionType {
+		case "geo":
+			continue
+		case "bundles":
+			dynamicConfigMergeBundles(dc.Conditions, request, endpoint)
+		default:
+			continue
+		}
+	}
+}
+
+func dynamicConfigMergeBundles(Conditions map[string][]openrtb_ext.DspConfigValueEntry, request *[]byte, endpoint *string) {
+	siteDomain, _ := jsonparser.GetString(*request, "site", "domain")
+	appBundleID, _ := jsonparser.GetString(*request, "app", "bundle")
+
+	for bundleId, con := range Conditions {
+		if (siteDomain != "" && bundleId == "site") || (siteDomain == bundleId) {
+			dynamicConfigMergeValues(con, request, endpoint, "site")
+		} else if appBundleID == bundleId {
+			dynamicConfigMergeValues(con, request, endpoint, "app")
+		}
+	}
+}
+
+func ConvertPath(jsonPath string) []string {
+	// Regular expression to capture keys and array indices separately
+	re := regexp.MustCompile(`\w+|\[\d+\]`)
+
+	// Find all matches in the given path
+	matches := re.FindAllString(jsonPath, -1)
+
+	return matches
+}
+
+func dynamicConfigMergeValues(con []openrtb_ext.DspConfigValueEntry, requestJson *[]byte, endpoint *string, t string) {
+	for _, v := range con {
+		switch v.Place {
+		case "body":
+			for key, value := range v.KeyMap {
+				dynamicVal := strings.HasPrefix(value, "Vx")
+				if dynamicVal {
+					value = strings.TrimPrefix(value, "Vx")
+					dynamicKeys := ConvertPath(value)
+					var err error
+					value, err = jsonparser.GetUnsafeString(*requestJson, dynamicKeys...)
+					if err != nil {
+						continue
+					}
+				}
+				keys := ConvertPath(key)
+				if (t == "app" && keys[0] == "site") || (t == "site" && keys[0] == "app") {
+					continue
+				}
+				if newJson, err := jsonparser.Set(*requestJson, []byte(value), keys...); err == nil {
+					requestJson = &newJson
+				}
+			}
+		case "queryparam":
+			continue
+		case "url":
+			continue
+		default:
+			continue
+		}
+	}
+
+	fmt.Printf("requestJson:: %v\n", string(*requestJson))
 }
