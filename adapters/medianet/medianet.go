@@ -22,6 +22,7 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, reqInfo *adapters.E
 	var errs []error
 
 	reqJson, err := json.Marshal(request)
+	fmt.Printf("reqJson: %v\n", string(reqJson))
 	if err != nil {
 		errs = append(errs, err)
 		return nil, errs
