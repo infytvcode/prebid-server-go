@@ -65,7 +65,8 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 			reqCopy.Imp = append(reqCopy.Imp, imp)
 			reqCopy.Ext = nil
 			requestJSON, err := json.Marshal(reqCopy)
-			dynamicConfigMerge(infyExt.DspConfigs, &requestJSON, &endpoint)
+			requestJSON = *(dynamicConfigMerge(infyExt.DspConfigs, &requestJSON, &endpoint))
+			fmt.Printf("requestJSON: %v\n", string(requestJSON))
 			// dynamic config map
 			if err != nil {
 				errors = append(errors, err)
@@ -89,14 +90,10 @@ func (a *adapter) MakeRequests(request *openrtb2.BidRequest, requestInfo *adapte
 		}
 
 	}
-	fmt.Printf("request: %v\n", requests)
-	fmt.Printf("errors: %v\n", errors)
 	return requests, errors
 }
 
 func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest *adapters.RequestData, response *adapters.ResponseData) (*adapters.BidderResponse, []error) {
-	fmt.Printf("response: %v\n", response)
-	fmt.Printf("response.Body: %v\n", string(response.Body))
 	if response.StatusCode == http.StatusNoContent {
 		return nil, nil
 	} else if response.StatusCode == http.StatusBadRequest {
@@ -109,14 +106,10 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 		}}
 	}
 
-	fmt.Printf("internalRequest.Imp: %v\n", internalRequest.Imp)
-
 	if len(internalRequest.Imp) > 0 {
 		var bidResp openrtb2.BidResponse
 		impression := &internalRequest.Imp[0]
 		if infyExt, err := getImpressionExt(impression); err == nil {
-			fmt.Printf("infyExt.EndpointID: %v\n", infyExt.EndpointID)
-			fmt.Printf("infyExt.EndpointType: %v\n", infyExt.EndpointType)
 			if infyExt.EndpointType == "VAST_URL" {
 				bidResp = openrtb2.BidResponse{
 					ID: internalRequest.ID,
@@ -138,7 +131,6 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			} else {
 				if err := json.Unmarshal(response.Body, &bidResp); err != nil {
-					fmt.Printf("err: %v\n", err)
 					return nil, []error{err}
 				}
 				for i, sb := range bidResp.SeatBid {
@@ -154,7 +146,6 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			}
 		}
-		fmt.Printf("impression: %v\n", impression)
 		bidsCapacity := 1
 		if len(bidResp.SeatBid) > 0 {
 			bidsCapacity = len(bidResp.SeatBid[0].Bid)
@@ -172,7 +163,6 @@ func (a *adapter) MakeBids(internalRequest *openrtb2.BidRequest, externalRequest
 				}
 			}
 		}
-		fmt.Printf("bidResponse: %v\n", bidResponse)
 
 		return bidResponse, nil
 	}
@@ -197,7 +187,6 @@ func getMediaTypeForBid(bid *openrtb2.Bid) (openrtb_ext.BidType, error) {
 // getImpressionExt parses and return first imp ext or nil
 func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvHb, error) {
 	var bidderExt adapters.ExtImpBidder
-	fmt.Printf("imp.Ext: %v\n", imp.Ext)
 	if err := json.Unmarshal(imp.Ext, &bidderExt); err != nil {
 		return nil, &errortypes.BadInput{
 			Message: err.Error(),
@@ -213,30 +202,32 @@ func getImpressionExt(imp *openrtb2.Imp) (*openrtb_ext.ExtInfytvHb, error) {
 	return &extImpInfyTV, nil
 }
 
-func dynamicConfigMerge(dcs []openrtb_ext.DspConfig, request *[]byte, endpoint *string) {
+func dynamicConfigMerge(dcs []openrtb_ext.DspConfig, request *[]byte, endpoint *string) *[]byte {
 	for _, dc := range dcs {
 		switch dc.ConditionType {
 		case "geo":
 			continue
 		case "bundles":
-			dynamicConfigMergeBundles(dc.Conditions, request, endpoint)
+			request = dynamicConfigMergeBundles(dc.Conditions, request, endpoint)
 		default:
 			continue
 		}
 	}
+	return request
 }
 
-func dynamicConfigMergeBundles(Conditions map[string][]openrtb_ext.DspConfigValueEntry, request *[]byte, endpoint *string) {
+func dynamicConfigMergeBundles(Conditions map[string][]openrtb_ext.DspConfigValueEntry, request *[]byte, endpoint *string) *[]byte {
 	siteDomain, _ := jsonparser.GetString(*request, "site", "domain")
 	appBundleID, _ := jsonparser.GetString(*request, "app", "bundle")
 
 	for bundleId, con := range Conditions {
 		if (siteDomain != "" && bundleId == "site") || (siteDomain == bundleId) {
-			dynamicConfigMergeValues(con, request, endpoint, "site")
+			request = dynamicConfigMergeValues(con, request, endpoint, "site")
 		} else if appBundleID == bundleId {
-			dynamicConfigMergeValues(con, request, endpoint, "app")
+			request = dynamicConfigMergeValues(con, request, endpoint, "app")
 		}
 	}
+	return request
 }
 
 func ConvertPath(jsonPath string) []string {
@@ -249,7 +240,7 @@ func ConvertPath(jsonPath string) []string {
 	return matches
 }
 
-func dynamicConfigMergeValues(con []openrtb_ext.DspConfigValueEntry, requestJson *[]byte, endpoint *string, t string) {
+func dynamicConfigMergeValues(con []openrtb_ext.DspConfigValueEntry, requestJson *[]byte, endpoint *string, t string) *[]byte {
 	for _, v := range con {
 		switch v.Place {
 		case "body":
@@ -280,6 +271,5 @@ func dynamicConfigMergeValues(con []openrtb_ext.DspConfigValueEntry, requestJson
 			continue
 		}
 	}
-
-	fmt.Printf("requestJson:: %v\n", string(*requestJson))
+	return requestJson
 }
